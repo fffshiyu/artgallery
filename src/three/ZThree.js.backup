@@ -1,0 +1,709 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import TWEEN from 'three/examples/jsm/libs/tween.module.js';
+import Stats from 'three/examples/jsm/libs/stats.module.js';
+
+export default class ZThree {
+  constructor(id) {
+    this.id = id;
+    this.el = document.getElementById(id);
+    
+    // 初始化键盘控制相关变量
+    this.keys = {
+      w: false,
+      a: false,
+      s: false,
+      d: false
+    };
+    this.velocity = new THREE.Vector3();
+    this.direction = new THREE.Vector3();
+    this.moveSpeed = 0.05; // 移动速度（减慢一半）
+    this.isMoving = false; // 是否正在WASD移动
+    this.movementEndTimeout = null; // 移动结束延迟计时器
+    this.initialTargetYOffset = null; // 控制器目标Y轴偏移量
+  }
+
+  // 初始化场景
+  initThree() {
+    let _this = this;
+    let width = this.el.offsetWidth;
+    let height = this.el.offsetHeight;
+    this.scene = new THREE.Scene();
+    this.textureLoader = new THREE.TextureLoader();
+    this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    // 设置摄像头初始位置为 (0, 2.5, 0) - 固定2.5米高度
+    this.camera.position.set(0, 2.5, 0);
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true
+    });
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setSize(width, height);
+    
+    // 修复透视问题的关键设置
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.outputEncoding = THREE.sRGBEncoding;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    
+    // 启用深度测试和深度写入
+    this.renderer.sortObjects = true;
+    this.renderer.autoClear = true;
+    this.renderer.autoClearColor = true;
+    this.renderer.autoClearDepth = true;
+    this.renderer.autoClearStencil = false;
+    
+    this.el.append(this.renderer.domElement);
+    // this.renderer.setClearColor('#000');
+    // this.gui = new GUI();
+
+    // 初始化键盘控制
+    this.initKeyboardControls();
+
+    window.addEventListener(
+      'resize',
+      function() {
+        _this.camera.aspect = _this.el.offsetWidth / _this.el.offsetHeight;
+        _this.camera.updateProjectionMatrix();
+        _this.renderer.setSize(_this.el.offsetWidth, _this.el.offsetHeight);
+        if (_this.cssRenderer) {
+          _this.cssRenderer.setSize(_this.el.offsetWidth, _this.el.offsetHeight);
+        }
+      },
+      false
+    );
+  }
+
+  // 初始化键盘控制
+  initKeyboardControls() {
+    const _this = this;
+    
+    // 键盘按下事件
+    document.addEventListener('keydown', (event) => {
+      // 防止重复触发
+      if (event.repeat) return;
+      
+      switch (event.code) {
+        case 'KeyW':
+          _this.keys.w = true;
+          _this.isMoving = true;
+          break;
+        case 'KeyA':
+          _this.keys.a = true;
+          _this.isMoving = true;
+          break;
+        case 'KeyS':
+          _this.keys.s = true;
+          _this.isMoving = true;
+          break;
+        case 'KeyD':
+          _this.keys.d = true;
+          _this.isMoving = true;
+          break;
+      }
+    });
+
+    // 键盘松开事件
+    document.addEventListener('keyup', (event) => {
+      switch (event.code) {
+        case 'KeyW':
+          _this.keys.w = false;
+          break;
+        case 'KeyA':
+          _this.keys.a = false;
+          break;
+        case 'KeyS':
+          _this.keys.s = false;
+          break;
+        case 'KeyD':
+          _this.keys.d = false;
+          break;
+      }
+      
+      // 检查是否所有按键都松开了
+      const hasAnyKey = _this.keys.w || _this.keys.a || _this.keys.s || _this.keys.d;
+      if (!hasAnyKey) {
+        // 清除之前的超时
+        if (_this.movementEndTimeout) {
+          clearTimeout(_this.movementEndTimeout);
+        }
+        
+        // 延迟100ms后停止移动状态，避免误点击
+        _this.movementEndTimeout = setTimeout(() => {
+          _this.isMoving = false;
+          // 重新启用OrbitControls
+          if (_this.controls) {
+            _this.controls.enabled = true;
+            // 🔥 重新启用控制器时更新目标点，确保旋转围绕当前位置
+            if (_this.updateControlsTarget) {
+              _this.updateControlsTarget();
+            }
+          }
+        }, 100);
+      }
+    });
+  }
+
+  // 更新摄像头位置（WASD控制）
+  updateCameraMovement() {
+    // 检查是否有按键按下，没有按键就不更新
+    const hasMovement = this.keys.w || this.keys.a || this.keys.s || this.keys.d;
+    if (!hasMovement) {
+      return;
+    }
+
+    // 只在开始移动时禁用OrbitControls，避免频繁切换
+    if (this.isMoving && this.controls && this.controls.enabled) {
+      this.controls.enabled = false;
+    }
+
+    // 使用更平滑的阻尼系数
+    const damping = 0.8;
+    this.velocity.multiplyScalar(damping);
+
+    this.direction.z = Number(this.keys.w) - Number(this.keys.s);
+    this.direction.x = Number(this.keys.d) - Number(this.keys.a);
+    this.direction.normalize();
+
+    if (this.keys.w || this.keys.s) this.velocity.z -= this.direction.z * this.moveSpeed;
+    if (this.keys.a || this.keys.d) this.velocity.x -= this.direction.x * this.moveSpeed;
+
+    // 获取摄像头的方向向量，但只使用水平方向（忽略Y轴旋转）
+    const cameraDirection = new THREE.Vector3();
+    this.camera.getWorldDirection(cameraDirection);
+    // 将Y分量设为0，只保留水平方向
+    cameraDirection.y = 0;
+    cameraDirection.normalize();
+    
+    // 计算右方向向量（也是水平的）
+    const right = new THREE.Vector3();
+    right.crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize();
+    
+    // 保存当前的Y位置
+    const fixedY = 2.5; // 将Y位置固定为2.5米
+    
+    // 根据摄像头朝向计算移动向量（只在水平面移动）
+    const moveVector = new THREE.Vector3();
+    moveVector.addScaledVector(cameraDirection, -this.velocity.z);
+    moveVector.addScaledVector(right, -this.velocity.x);
+    
+    // 碰撞检测：检查移动目标位置是否会撞墙
+    const targetPosition = new THREE.Vector3(
+      this.camera.position.x + moveVector.x,
+      fixedY,
+      this.camera.position.z + moveVector.z
+    );
+    
+    // 如果没有碰撞，才执行移动
+    if (this.checkCollision(this.camera.position, targetPosition)) {
+      // 只更新X和Z位置，强制保持Y位置为3米
+      this.camera.position.x += moveVector.x;
+      this.camera.position.z += moveVector.z;
+      this.camera.position.y = fixedY; // 强制锁定Y位置为2.5米
+
+      // 🔥 使用动态目标系统，确保移动后旋转依然是原地旋转
+      if (this.controls && this.updateControlsTarget) {
+        this.updateControlsTarget();
+      }
+    }
+  }
+
+  // 简单的碰撞检测方法
+  checkCollision(currentPos, targetPos) {
+    // 如果没有场景或模型，允许移动
+    if (!this.scene || !this.rayModel) {
+      console.log('没有场景或模型数据，允许移动');
+      return true;
+    }
+
+    // 创建射线检测器
+    if (!this.collisionRaycaster) {
+      this.collisionRaycaster = new THREE.Raycaster();
+    }
+
+    // 计算移动方向和距离
+    const direction = new THREE.Vector3().subVectors(targetPos, currentPos);
+    const moveDistance = direction.length();
+    direction.normalize();
+    
+    // 获取需要检测碰撞的物体（墙体、障碍物等）
+    const collisionObjects = [];
+    
+    // 遍历所有模型对象
+    this.rayModel.forEach(obj => {
+      const name = obj.name;
+      if (name && (
+        name.includes('墙') || 
+        name.includes('wall') || 
+        name.includes('Wall') ||
+        name.includes('沙发') ||
+        name.includes('中间屏') ||
+        name === '天窗栅栏' ||
+        name === '房顶' ||
+        name === 'G-Object240'
+      )) {
+        collisionObjects.push(obj);
+      }
+    });
+
+    // 首次运行时输出调试信息
+    if (!this.collisionObjectsLogged) {
+      console.log('总模型数量:', this.rayModel.length);
+      console.log('可碰撞物体数量:', collisionObjects.length);
+      console.log('可碰撞物体名称:', collisionObjects.map(obj => obj.name));
+      this.collisionObjectsLogged = true;
+    }
+
+    // 如果没有找到可碰撞物体，输出警告
+    if (collisionObjects.length === 0) {
+      console.warn('没有找到可碰撞物体，请检查模型名称');
+      return true; // 没有碰撞物体时允许移动
+    }
+
+    // 增强碰撞检测：多方向检测
+    const safetyDistance = 2.0; // 增加安全距离，防止穿模 // 统一安全距离为1.5单位
+    const checkDirections = [
+      direction.clone(), // 主要移动方向
+      direction.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 6), // 右侧30度
+      direction.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 6), // 左侧30度
+    ];
+
+    // 检查多个方向
+    for (let i = 0; i < checkDirections.length; i++) {
+      const checkDirection = checkDirections[i];
+      
+      // 设置射线起点和方向
+      this.collisionRaycaster.set(currentPos, checkDirection);
+      
+      // 进行射线检测
+      const intersects = this.collisionRaycaster.intersectObjects(collisionObjects, true);
+      
+      // 如果检测到碰撞
+      if (intersects.length > 0) {
+        const closestIntersect = intersects[0];
+        const distance = closestIntersect.distance;
+        
+        // 输出射线检测详细信息（减少日志频率）
+        if (Math.random() < 0.1 && i === 0) { // 只在主方向偶尔输出
+          console.log('射线检测 - 起点:', currentPos, '方向:', checkDirection, '移动距离:', moveDistance.toFixed(3));
+          console.log('检测到的碰撞数量:', intersects.length);
+          console.log('最近碰撞物体:', closestIntersect.object.name || '未命名');
+          console.log('碰撞距离:', distance.toFixed(3), '安全距离:', safetyDistance);
+        }
+        
+        // 如果任何方向检测到距离过近，阻止移动
+        if (distance < safetyDistance) {
+          console.log('🚫 阻止移动 - 方向', i === 0 ? '前方' : i === 1 ? '右前方' : '左前方', '距离墙壁太近，当前距离:', distance.toFixed(2), '最小安全距离:', safetyDistance);
+          return false; // 阻止移动
+        }
+      }
+    }
+
+    // 额外检查：从目标位置检测周围是否有墙体
+    const targetCheckDirections = [
+      new THREE.Vector3(1, 0, 0),   // 右
+      new THREE.Vector3(-1, 0, 0),  // 左
+      new THREE.Vector3(0, 0, 1),   // 前
+      new THREE.Vector3(0, 0, -1),  // 后
+    ];
+
+    for (let dir of targetCheckDirections) {
+      this.collisionRaycaster.set(targetPos, dir);
+      const intersects = this.collisionRaycaster.intersectObjects(collisionObjects, true);
+      
+      if (intersects.length > 0) {
+        const distance = intersects[0].distance;
+        if (distance < safetyDistance * 0.8) { // 目标位置周围检查稍微宽松一些
+          console.log('🚫 阻止移动 - 目标位置距离墙壁太近:', distance.toFixed(2));
+          return false;
+        }
+      }
+    }
+
+    if (Math.random() < 0.05) { // 偶尔输出允许移动的信息
+      console.log('✅ 允许移动 - 所有方向距离安全');
+    }
+    
+    return true; // 允许移动
+  }
+
+  // 启用/禁用WASD控制
+  enableWASDControl(enable = true) {
+    this.wasdEnabled = enable;
+  }
+
+  // 重新启用OrbitControls
+  enableOrbitControls() {
+    if (this.controls) {
+      this.controls.enabled = true;
+    }
+  }
+
+  initLight() {
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    this.scene.add(ambientLight);
+  }
+
+  // 初始化helper
+  initHelper() {
+    this.axesHelper = new THREE.AxesHelper(100);
+    this.scene.add(this.axesHelper);
+  }
+
+  // 切换坐标轴显示状态
+  toggleAxesHelper(visible) {
+    if (this.axesHelper) {
+      if (visible === undefined) {
+        this.axesHelper.visible = !this.axesHelper.visible;
+      } else {
+        this.axesHelper.visible = visible;
+      }
+    }
+  }
+
+  // 初始化控制器
+  initOrbitControls() {
+    let controls = new OrbitControls(this.camera, this.renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.enableZoom = true;
+    controls.autoRotate = false;
+    controls.autoRotateSpeed = 0.5;
+    controls.enablePan = true;
+    
+    // 添加触摸设备兼容性设置
+    controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN
+    };
+    
+    // 设置合理的边界
+    controls.minDistance = 1.0; // 增加最小距离，防止穿模
+    controls.maxDistance = 50;
+    controls.maxPolarAngle = Math.PI * 0.85; // 限制垂直旋转角度，防止从下方看穿模型
+
+    // 🔥 新增：动态目标更新功能
+    // 让旋转中心始终保持在相机前方，实现真正的原地旋转
+    this.updateControlsTarget = () => {
+      // 获取相机朝向
+      const cameraDirection = new THREE.Vector3();
+      this.camera.getWorldDirection(cameraDirection);
+      
+      // 设置目标点在相机前方5米处
+      const targetDistance = 5.0;
+      const newTarget = this.camera.position.clone().add(
+        cameraDirection.multiplyScalar(targetDistance)
+      );
+      
+      controls.target.copy(newTarget);
+    };
+
+    let cameraStartPostion, cameraEndPostion;
+    controls.addEventListener('start', () => {
+      cameraStartPostion = this.camera.position.clone();
+      controls.isClickLock = false;
+      
+      // 🔥 旋转开始时更新目标点，确保围绕当前视线方向旋转
+      this.updateControlsTarget();
+    });
+
+    controls.addEventListener('end', () => {
+      cameraEndPostion = this.camera.position;
+      const startXYZ = Object.values(cameraStartPostion).reduce(function(prev, curr) {
+        return prev + curr;
+      });
+      const endXYZ = Object.values(cameraEndPostion).reduce(function(prev, curr) {
+        return prev + curr;
+      });
+      if (Math.abs(endXYZ - startXYZ) < 0.0001) {
+        controls.isClickLock = false;
+      } else {
+        controls.isClickLock = true;
+      }
+      cameraStartPostion = null;
+      cameraEndPostion = null;
+    });
+    
+    this.controls = controls;
+  }
+
+  // 初始化status
+  initStatus() {
+    this.stats = new Stats();
+    this.el.appendChild(this.stats.dom);
+  }
+
+  // 初始化射线
+  initRaycaster(callback, models = this.scene.children, eventName = 'click') {
+    this.raycaster = new THREE.Raycaster();
+
+    // 绑定点击事件
+    this.el.addEventListener(eventName, (evt) => {
+      // 获取canvas元素的边界信息
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      
+      // 修正鼠标坐标计算，使用canvas的相对位置
+      let mouse = {
+        x: ((evt.clientX - rect.left) / rect.width) * 2 - 1,
+        y: -((evt.clientY - rect.top) / rect.height) * 2 + 1
+      };
+
+      let activeObj = this.fireRaycaster(mouse, models);
+      
+      if (callback) {
+        callback(activeObj, this, evt, mouse);
+      }
+
+      //鼠标的变换
+      document.body.style.cursor = 'pointer';
+    });
+  }
+
+  // 返回选中物体
+  fireRaycaster(pointer, models) {
+    // 使用一个新的原点和方向来更新射线
+    this.raycaster.setFromCamera(pointer, this.camera);
+
+    let intersects = this.raycaster.intersectObjects(models, true);
+    //
+    if (intersects.length > 0) {
+      let selectedObject = intersects[0];
+      return selectedObject;
+    } else {
+      return false;
+    }
+  }
+
+  loaderModel(option) {
+    switch (option.type) {
+      case 'obj':
+        if (!this.objLoader) {
+          this.objLoader = new OBJLoader();
+        }
+        if (!this.mtlLoader) {
+          this.mtlLoader = new MTLLoader();
+        }
+        this.mtlLoader.load(option.mtlUrl || '', (materials) => {
+          materials.preload();
+          this.objLoader
+            .setMaterials(materials)
+            .load(option.url, option.onLoad, option.onProgress, option.onError);
+        });
+        break;
+
+      case 'gltf':
+      case 'glb':
+        if (!this.gltfLoader) {
+          this.gltfLoader = new GLTFLoader();
+          let dracoLoader = new DRACOLoader();
+          dracoLoader.setDecoderPath('draco/');
+          this.gltfLoader.setDRACOLoader(dracoLoader);
+        }
+        this.gltfLoader.load(option.url, option.onLoad, option.onProgress, option.onError);
+        break;
+
+      case 'fbx':
+        if (!this.fbxLoader) {
+          this.fbxLoader = new FBXLoader();
+        }
+        this.fbxLoader.load(option.url, option.onLoad, option.onProgress, option.onError);
+        break;
+
+      case 'rgbe':
+        if (!this.rgbeLoader) {
+          this.rgbeLoader = new RGBELoader();
+        }
+        this.rgbeLoader.load(option.url, option.onLoad, option.onProgress, option.onError);
+        break;
+
+      case 'mp3':
+      case 'wav':
+        if (!this.audioaLoader) {
+          this.audioaLoader = new THREE.AudioLoader();
+        }
+        this.audioaLoader.load(option.url, option.onLoad, option.onProgress, option.onError);
+        break;
+
+      default:
+        console.error('当前只支持obj, gltf, glb, fbx, rgbe格式');
+        break;
+    }
+  }
+
+  // 迭代加载
+  iterateLoad(objFileList, onProgress, onAllLoad) {
+    let fileIndex = 0;
+    let that = this;
+
+    function iterateLoadForIt() {
+      that.loaderModel({
+        type: objFileList[fileIndex].type,
+        dracoUrl: objFileList[fileIndex].dracoUrl,
+        mtlUrl: objFileList[fileIndex].mtlUrl,
+        url: objFileList[fileIndex].url,
+        onLoad: function(object) {
+          if (objFileList[fileIndex].onLoad) objFileList[fileIndex].onLoad(object);
+          fileIndex++;
+          if (fileIndex < objFileList.length) {
+            iterateLoadForIt();
+          } else {
+            if (onAllLoad) onAllLoad();
+          }
+        },
+        onProgress: function(xhr) {
+          if (objFileList[fileIndex].onProgress) objFileList[fileIndex].onProgress(xhr, fileIndex);
+          if (onProgress) onProgress(xhr, fileIndex);
+        }
+      });
+    }
+    iterateLoadForIt();
+  }
+
+  // 加载天空盒
+  loaderSky(path) {
+    let skyTexture = new THREE.CubeTextureLoader().setPath(path).load([
+      'px.jpg', //右
+      'nx.jpg', //左
+      'py.jpg', //上
+      'ny.jpg', //下
+      'pz.jpg', //前
+      'nz.jpg' //后
+    ]);
+    return skyTexture;
+  }
+
+  flyTo(option) {
+    option.position = option.position || []; // 相机新的位置
+    option.controls = option.controls || []; // 控制器新的中心点位置(围绕此点旋转等)
+    option.duration = option.duration || 1000; // 飞行时间
+    option.easing = option.easing || TWEEN.Easing.Linear.None;
+    TWEEN.removeAll();
+    const curPosition = this.camera.position;
+    const controlsTar = this.controls.target;
+    
+    // 强制设置Y坐标为2.5米
+    const fixedY = 2.5;
+    
+          // 如果提供了位置，确保Y坐标为2.5米
+    if (option.position.length >= 2) {
+      option.position[1] = fixedY;
+    }
+    
+    const tween = new TWEEN.Tween({
+      x1: curPosition.x, // 相机当前位置x
+      y1: curPosition.y, // 相机当前位置y
+      z1: curPosition.z, // 相机当前位置z
+      x2: controlsTar.x, // 控制当前的中心点x
+      y2: controlsTar.y, // 控制当前的中心点y
+      z2: controlsTar.z // 控制当前的中心点z
+    })
+      .to(
+        {
+          x1: option.position[0], // 新的相机位置x
+          y1: fixedY, // 新的相机位置y强制为2.5米
+          z1: option.position[2], // 新的相机位置z
+          x2: option.controls[0], // 新的控制中心点位置x
+          y2: option.controls[1], // 新的控制中心点位置x
+          z2: option.controls[2] // 新的控制中心点位置x
+        },
+        option.duration
+      )
+      .easing(TWEEN.Easing.Linear.None); // TWEEN.Easing.Cubic.InOut //匀速
+    tween.onUpdate(() => {
+      this.controls.enabled = false;
+      this.camera.position.set(tween._object.x1, fixedY, tween._object.z1);
+      this.controls.target.set(tween._object.x2, tween._object.y2, tween._object.z2);
+      this.controls.update();
+      if (option.update instanceof Function) {
+        option.update(tween);
+      }
+    });
+    tween.onStart(() => {
+      this.controls.enabled = false;
+      if (option.start instanceof Function) {
+        option.start();
+      }
+    });
+    tween.onComplete(() => {
+      this.controls.enabled = true;
+      if (option.done instanceof Function) {
+        option.done();
+      }
+    });
+    tween.onStop(() => (option.stop instanceof Function ? option.stop() : ''));
+    tween.start();
+    TWEEN.add(tween);
+    return tween;
+  }
+
+  // 计算模型的世界坐标
+  getModelWorldPostion(model) {
+    let worldPosition = new THREE.Vector3();
+    model.getWorldPosition(worldPosition);
+    console.log(worldPosition);
+    return worldPosition;
+  }
+
+  // 截图功能
+  takeScreenshot() {
+    try {
+      // 确保场景已经渲染
+      this.renderer.render(this.scene, this.camera);
+      
+      // 获取canvas数据URL
+      const dataURL = this.renderer.domElement.toDataURL('image/png');
+      
+      // 创建下载链接
+      const link = document.createElement('a');
+      link.download = `gallery-screenshot-${new Date().getTime()}.png`;
+      link.href = dataURL;
+      
+      // 触发下载
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log('📸 截图已保存');
+      return true;
+    } catch (error) {
+      console.error('截图失败:', error);
+      return false;
+    }
+  }
+
+  // 渲染
+  render(callback) {
+    let _this = this;
+    // 渲染
+    function render() {
+      // 强制锁定相机高度为2.5米
+      if (_this.camera.position.y !== 2.5) {
+        _this.camera.position.y = 2.5;
+      }
+      
+      // 更新WASD控制
+      if (_this.isMoving) {
+        _this.updateCameraMovement();
+      }
+
+      // 更新状态
+      if (_this.stats) {
+        _this.stats.update();
+      }
+
+      requestAnimationFrame(render);
+
+      TWEEN.update();
+
+      if (callback) callback();
+    }
+    render();
+  }
+}
