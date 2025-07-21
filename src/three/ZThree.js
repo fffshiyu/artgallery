@@ -482,7 +482,7 @@ export default class ZThree {
       this.joystickData.x = 0;
       this.joystickData.y = 0;
     }
-
+    
     
     // 重置观看状态
     this.currentViewingPicture = null;
@@ -628,38 +628,58 @@ export default class ZThree {
     //   });
     // }
 
-    // 🐋 第三人称模式：移动鲸鱼而不是相机，使用鲸鱼自身朝向作为参考
+    // 🐋 第三人称模式：移动鲸鱼而不是相机，使用相机视角作为参考
     if (this.thirdPersonMode && this.whaleModel) {
-      // 使用鲸鱼当前朝向计算移动方向
-      const whaleDirection = new THREE.Vector3(0, 0, 1); // 鲸鱼朝向（Z轴正方向）
-      whaleDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.whaleModel.rotation.y);
-      whaleDirection.normalize();
+      // 🔥 修改：使用相机视角方向计算移动方向（而不是鲸鱼朝向）
+      const cameraDirection = new THREE.Vector3();
       
-      // 计算鲸鱼的右方向向量
-      const whaleRight = new THREE.Vector3();
-      whaleRight.crossVectors(whaleDirection, new THREE.Vector3(0, 1, 0)).normalize();
+      // 从第三人称控制器的欧拉角计算相机方向
+      const tempMatrix = new THREE.Matrix4();
+      tempMatrix.makeRotationFromEuler(this.thirdPersonControls.euler);
+      cameraDirection.set(0, 0, 1).applyMatrix4(tempMatrix);
+      cameraDirection.y = 0; // 只保留水平方向
+      cameraDirection.normalize();
       
-      // 根据鲸鱼朝向计算移动向量
+      // 计算相机的右方向向量
+      const cameraRight = new THREE.Vector3();
+      cameraRight.crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0)).normalize();
+      
+      // 根据相机视角计算移动向量
       const moveVector = new THREE.Vector3();
-      moveVector.addScaledVector(whaleDirection, this.velocity.z); // 前后移动（按鲸鱼朝向）
-      moveVector.addScaledVector(whaleRight, this.velocity.x); // 左右移动（相对鲸鱼）
+      moveVector.addScaledVector(cameraDirection, this.velocity.z); // 前后移动（按相机视角）
+      moveVector.addScaledVector(cameraRight, this.velocity.x); // 左右移动（相对相机）
       
-      // 使用鲸鱼位置进行碰撞检测
+      // 🔥 增强：使用鲸鱼位置进行碰撞检测，增加安全边距
       const targetPosition = new THREE.Vector3(
         this.whalePosition.x + moveVector.x,
         this.whalePosition.y,
         this.whalePosition.z + moveVector.z
       );
       
-      if (this.checkCollision(this.whalePosition, targetPosition)) {
+      // 🐋 鲸鱼需要更严格的碰撞检测，考虑鲸鱼的体积
+      if (this.checkWhaleCollision(this.whalePosition, targetPosition)) {
         // 移动鲸鱼
-        // const oldWhalePosition = this.whalePosition.clone(); // 🔥 已移除未使用的变量
         this.whalePosition.x += moveVector.x;
         this.whalePosition.z += moveVector.z;
         this.whaleModel.position.copy(this.whalePosition);
         
-        // 只在实际移动时播放游泳动画（朝向由鼠标拖动控制）
+        // 🔥 新增：鲸鱼朝向跟随移动方向
         if (moveVector.length() > 0.001) {
+          // 计算鲸鱼应该面向的方向（移动方向）
+          const targetRotation = Math.atan2(moveVector.x, moveVector.z);
+          
+          // 平滑旋转到目标角度
+          const currentRotation = this.whaleModel.rotation.y;
+          let rotationDiff = targetRotation - currentRotation;
+          
+          // 处理角度跨越问题（-π到π的跳跃）
+          if (rotationDiff > Math.PI) rotationDiff -= 2 * Math.PI;
+          if (rotationDiff < -Math.PI) rotationDiff += 2 * Math.PI;
+          
+          // 平滑插值旋转
+          this.whaleModel.rotation.y += rotationDiff * 0.1;
+          this.whaleRotation.y = this.whaleModel.rotation.y;
+          
           // 播放游泳动画
           if (this.whaleMixer && Object.keys(this.whaleAnimations).length > 0) {
             const firstAnimationName = Object.keys(this.whaleAnimations)[0];
@@ -668,19 +688,6 @@ export default class ZThree {
             }
           }
         }
-        
-        // 🔥 添加移动调试
-        // if (Math.random() < 0.05) {
-        //   console.log('🐋 鲸鱼移动:', {
-        //     from: { x: oldWhalePosition.x.toFixed(3), z: oldWhalePosition.z.toFixed(3) },
-        //     to: { x: this.whalePosition.x.toFixed(3), z: this.whalePosition.z.toFixed(3) },
-        //     moveVector: { x: moveVector.x.toFixed(4), z: moveVector.z.toFixed(4) }
-        //   });
-        // }
-      } else {
-        // if (Math.random() < 0.1) {
-        //   console.log('🚫 鲸鱼移动被碰撞检测阻止');
-        // }
       }
     } else {
       // 第一人称模式：移动相机，使用相机朝向
@@ -736,7 +743,83 @@ export default class ZThree {
     }
   }
 
-  // 智能碰撞检测方法 - 性能优化版
+  // 🐋 鲸鱼专用碰撞检测方法 - 更严格的安全距离
+  checkWhaleCollision(currentPos, targetPos) {
+    // 如果没有场景或模型，允许移动
+    if (!this.scene || !this.rayModel) {
+      return true;
+    }
+
+    // 创建射线检测器
+    if (!this.whaleCollisionRaycaster) {
+      this.whaleCollisionRaycaster = new THREE.Raycaster();
+    }
+
+    // 计算移动方向和距离
+    const moveDirection = new THREE.Vector3().subVectors(targetPos, currentPos);
+    const moveDistance = moveDirection.length();
+    
+    // 如果移动距离太小，直接允许
+    if (moveDistance < 0.001) {
+      return true;
+    }
+    
+    moveDirection.normalize();
+    
+    // 获取需要检测碰撞的物体
+    const collisionObjects = [];
+    this.rayModel.forEach(obj => {
+      const name = obj.name;
+      if (name && (
+        name === 'G-Object353_1' || 
+        name === 'G-Object353_3' ||
+        name === 'G-Object353' ||
+        name === 'C-组件#1' ||
+        name === 'C-组件#1_1' ||
+        name === 'C-组件#1_2' ||
+        name === 'G-Object002_2' ||
+        name === '墙004' ||
+        name.includes('wall') || 
+        name.includes('Wall') 
+      )) {
+        collisionObjects.push(obj);
+      }
+    });
+
+    if (collisionObjects.length === 0) {
+      return true; // 没有可碰撞的物体
+    }
+    
+    // 🐋 鲸鱼需要多方向检测，确保不会卡在墙角
+    const checkDirections = [
+      moveDirection.clone(), // 主要移动方向
+      new THREE.Vector3(moveDirection.x + 0.2, 0, moveDirection.z).normalize(), // 稍微偏右
+      new THREE.Vector3(moveDirection.x - 0.2, 0, moveDirection.z).normalize(), // 稍微偏左
+    ];
+    
+    for (const direction of checkDirections) {
+      this.whaleCollisionRaycaster.set(currentPos, direction);
+      const intersects = this.whaleCollisionRaycaster.intersectObjects(collisionObjects, true);
+
+      if (intersects.length > 0) {
+        const hitObject = intersects[0].object;
+        const hitDistance = intersects[0].distance;
+        
+        // 🐋 鲸鱼需要更大的安全距离，考虑鲸鱼的体积
+        const safetyDistance = hitObject.name === 'C-组件#1_1' ? 1.0 : 2.0; // 比普通碰撞检测更大的安全距离
+        
+        // 如果撞到了，且距离小于安全距离，则阻止移动
+        if (hitDistance < safetyDistance) {
+          return false;
+        }
+      }
+    }
+
+    // 允许移动
+    return true;
+  }
+
+  // 智能碰撞检测方法 - 性能优化版（第一人称用）
   checkCollision(currentPos, targetPos) {
     // 如果没有场景或模型，允许移动
     if (!this.scene || !this.rayModel) {
@@ -1673,16 +1756,19 @@ export default class ZThree {
         this.whalePosition.y = 1.8; // 鲸鱼固定高度1.8米
         this.whaleModel.position.copy(this.whalePosition);
         
-        // 设置鲸鱼朝向与相机朝向匹配
-        // 获取相机的世界方向并转换为鲸鱼的Y轴旋转
-        const cameraDirection = new THREE.Vector3();
-        this.camera.getWorldDirection(cameraDirection);
-        this.whaleModel.rotation.y = Math.atan2(cameraDirection.x, cameraDirection.z);
+        // 🔥 修改：保持鲸鱼当前朝向，不强制与相机朝向匹配
+        // 鲸鱼的朝向将在移动时根据移动方向自动调整
       }
       
       // 禁用第一人称控制，启用第三人称控制
       this.firstPersonControls.enabled = false;
       this.thirdPersonControls.enabled = true;
+      
+      // 🔥 新增：初始化第三人称控制器的欧拉角（基于当前相机朝向）
+      const cameraDirection = new THREE.Vector3();
+      this.camera.getWorldDirection(cameraDirection);
+      this.thirdPersonControls.euler.y = Math.atan2(cameraDirection.x, cameraDirection.z);
+      this.thirdPersonControls.euler.x = 0; // 初始时水平视角
       
       // 播放鲸鱼游泳动画
       if (Object.keys(this.whaleAnimations).length > 0) {
@@ -1723,24 +1809,24 @@ export default class ZThree {
     // 基础偏移（相机在鲸鱼后方）
     const baseOffset = new THREE.Vector3(0, 0.6, -1.9); // 高度+0.7米（保持相机2.5米），后方1.9米（缩短0.3米）
     
-    // 根据鲸鱼的旋转角度计算相机位置
-    const whaleRotationY = this.whaleModel.rotation.y;
+    // 🔥 修改：使用第三人称控制器的欧拉角来计算相机偏移
+    const cameraEuler = this.thirdPersonControls.euler;
     
-    // 应用鲸鱼的旋转到偏移向量
+    // 应用垂直旋转到偏移向量
     const rotatedOffset = baseOffset.clone();
-    rotatedOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), whaleRotationY);
+    
+    // 先应用垂直旋转（绕X轴）
+    rotatedOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), cameraEuler.x);
+    
+    // 再应用水平旋转（绕Y轴）
+    rotatedOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraEuler.y);
     
     // 设置相机位置（鲸鱼位置 + 旋转后的偏移）
     const cameraTargetPosition = this.whalePosition.clone().add(rotatedOffset);
     this.camera.position.copy(cameraTargetPosition);
     
-    // 计算相机朝向目标（鲸鱼前方一个点）
-    const lookDirection = new THREE.Vector3(0, 0, 1); // 鲸鱼朝向
-    lookDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), whaleRotationY);
-    const lookAtTarget = this.whalePosition.clone().add(lookDirection.multiplyScalar(5));
-    lookAtTarget.y = this.whalePosition.y; // 保持水平观察
-    
-    this.camera.lookAt(lookAtTarget);
+    // 相机始终看向鲸鱼
+    this.camera.lookAt(this.whalePosition);
   }
 
   // 🐋 初始化第三人称控制器
@@ -1753,19 +1839,20 @@ export default class ZThree {
         controls.isMouseDown = true;
         controls.lastMouseX = event.clientX;
         controls.lastMouseY = event.clientY;
-        console.log('🐋 开始第三人称旋转');
       }
     });
     
     this.renderer.domElement.addEventListener('mousemove', (event) => {
       if (controls.isMouseDown && controls.enabled && this.thirdPersonMode && this.whaleModel) {
         const deltaX = event.clientX - controls.lastMouseX;
+        const deltaY = event.clientY - controls.lastMouseY;
         
-        // 水平拖动旋转鲸鱼朝向
-        this.whaleModel.rotation.y -= deltaX * controls.sensitivity;
+        // 🔥 修改：控制相机角度而不是鲸鱼朝向
+        controls.euler.y -= deltaX * controls.sensitivity;
+        controls.euler.x -= deltaY * controls.sensitivity;
         
-        // 更新鲸鱼旋转状态
-        this.whaleRotation.y = this.whaleModel.rotation.y;
+        // 限制垂直角度
+        controls.euler.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, controls.euler.x));
         
         controls.lastMouseX = event.clientX;
         controls.lastMouseY = event.clientY;
@@ -1775,7 +1862,6 @@ export default class ZThree {
     this.renderer.domElement.addEventListener('mouseup', (event) => {
       if (event.button === 0) {
         controls.isMouseDown = false;
-        console.log('🐋 结束第三人称旋转');
       }
     });
     
@@ -1786,7 +1872,6 @@ export default class ZThree {
         controls.isTouchActive = true;
         controls.lastTouchX = event.touches[0].clientX;
         controls.lastTouchY = event.touches[0].clientY;
-        console.log('🐋 开始第三人称触摸旋转');
       }
     }, { passive: false });
     
@@ -1795,12 +1880,14 @@ export default class ZThree {
         event.preventDefault();
         
         const deltaX = event.touches[0].clientX - controls.lastTouchX;
+        const deltaY = event.touches[0].clientY - controls.lastTouchY;
         
-        // 水平拖动旋转鲸鱼朝向
-        this.whaleModel.rotation.y -= deltaX * controls.sensitivity;
+        // 🔥 修改：控制相机角度而不是鲸鱼朝向
+        controls.euler.y -= deltaX * controls.sensitivity;
+        controls.euler.x -= deltaY * controls.sensitivity;
         
-        // 更新鲸鱼旋转状态
-        this.whaleRotation.y = this.whaleModel.rotation.y;
+        // 限制垂直角度
+        controls.euler.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, controls.euler.x));
         
         controls.lastTouchX = event.touches[0].clientX;
         controls.lastTouchY = event.touches[0].clientY;
@@ -1810,7 +1897,6 @@ export default class ZThree {
     this.renderer.domElement.addEventListener('touchend', () => {
       if (controls.isTouchActive) {
         controls.isTouchActive = false;
-        console.log('🐋 结束第三人称触摸旋转');
       }
     }, { passive: false });
     

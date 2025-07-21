@@ -94,7 +94,7 @@ export default {
       
       // 新增：图片缩放状态
       imageZoomVisible: false,
-   host:'https://www.cidea.cn'
+	    host:'https://www.cidea.cn'
     };
   },
   computed: {

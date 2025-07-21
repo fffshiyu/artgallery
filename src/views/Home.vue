@@ -10,8 +10,11 @@
     <div class="control-icons" v-if="!showLoader">
       <!-- 一键漫游功能 -->
       <button class="control-btn" 
-              :class="{ 'roaming-active': isRoaming }"
-              :title="isRoaming ? '停止漫游' : '一键漫游'" 
+              :class="{ 
+                'roaming-active': isRoaming,
+                'disabled': isThirdPersonMode
+              }"
+              :title="isThirdPersonMode ? '第三人称模式下无法使用漫游' : (isRoaming ? '停止漫游' : '一键漫游')" 
               @click="toggleAutoRoaming">
         <img src="@/assets/image/roaming.png" alt="roaming icon">
       </button>
@@ -524,15 +527,26 @@
           const newMode = app.toggleViewMode();
           this.isThirdPersonMode = newMode;
           
-          const modeText = newMode ? '第三人称' : '第一人称';
-          this.$message({
-            message: `已切换到${modeText}视角`,
-            type: 'success',
-            duration: 2000,
-            customClass: 'dark-message'
-          });
+          // 🔥 新增：切换到第三人称时自动停止漫游
+          if (newMode && this.isRoaming) {
+            this.stopAutoRoaming();
+            this.$message({
+              message: '已切换到第三人称视角，自动漫游已停止',
+              type: 'warning',
+              duration: 3000,
+              customClass: 'dark-message'
+            });
+          } else {
+            const modeText = newMode ? '第三人称' : '第一人称';
+            this.$message({
+              message: `已切换到${modeText}视角`,
+              type: 'success',
+              duration: 2000,
+              customClass: 'dark-message'
+            });
+          }
           
-          console.log(`🐋 视角切换完成: ${modeText}`);
+          console.log(`🐋 视角切换完成: ${newMode ? '第三人称' : '第一人称'}`);
         } catch (error) {
           console.error('❌ 视角切换失败:', error);
           this.$message.error('视角切换失败，请稍后再试');
@@ -543,6 +557,12 @@
       startAutoRoaming() {
         if (!app || !app.rayModel) {
           this.$message.warning('场景尚未加载完成，请稍后再试');
+          return;
+        }
+
+        // 🐋 新增：第三人称模式下禁用漫游
+        if (app.thirdPersonMode) {
+          this.$message.warning('第三人称模式下无法使用自动漫游，请切换回第一人称');
           return;
         }
 
@@ -762,6 +782,23 @@
           &:hover {
             background: linear-gradient(45deg, #00aaee, #1c7ed6);
             transform: scale(1.1);
+          }
+        }
+        
+        // 🔥 新增：禁用按钮样式
+        &.disabled {
+          background: rgba(128, 128, 128, 0.5);
+          cursor: not-allowed;
+          opacity: 0.5;
+          
+          &:hover {
+            background: rgba(128, 128, 128, 0.5);
+            transform: none;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+          }
+          
+          img {
+            opacity: 0.6;
           }
         }
         
