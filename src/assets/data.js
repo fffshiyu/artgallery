@@ -1,6 +1,3 @@
-//import axios from 'axios'
-// 🔥 移除对imgurl.js的依赖
-// import imageMap4 from '../../public/imgurl.js'
 let picData
 
 // 🚀 数据同步系统
@@ -41,8 +38,7 @@ function notifyDataUpdate() {
 
 // 数组转换样式
 function transform(pro){
-	const transformedData = pro.reduce((acc, item) => {
-		  acc[item.name] = {
+	const transformedData = pro.reduce((acc, item) => {	  acc[item.name] = {
 			name: item.name,
 			title: item.title,
 			author: item.author,
@@ -50,9 +46,9 @@ function transform(pro){
 			imagePath: item.url,
 			image: null,
 			userid: item.userid
-		  };
-		  return acc;
-		}, {});
+  };
+  return acc;
+	}, {});
 	return transformedData
 }
 
@@ -299,9 +295,6 @@ export function getCustomUploadPictures() {
   detectedPicturePositions.forEach(picName => {
     // 检查是否有API数据
     const hasApiData = picData && picData[picName] && !picData[picName].isUploadPlaceholder;
-    
-    // 检查是否有自定义上传的数据
-    const hasCustomData = localStorage.getItem(`customArtwork_${picName}`);
     
     // 如果没有API数据，则设为可上传位置
     if (!hasApiData) {

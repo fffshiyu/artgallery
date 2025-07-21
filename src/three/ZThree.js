@@ -61,9 +61,16 @@ export default class ZThree {
     this.whaleModel = null; // 鲸鱼模型
     this.whaleMixer = null; // 鲸鱼动画混合器
     this.whaleAnimations = {}; // 鲸鱼动画缓存
+    this.whaleAnimationClips = []; // 🔥 新增：鲸鱼动画剪辑数据（模型加载时保存）
     this.whalePosition = new THREE.Vector3(0, 1.8, 0); // 鲸鱼位置（1.8米，不遮挡画作）
     this.whaleRotation = new THREE.Euler(0, 0, 0); // 鲸鱼旋转
     this.cameraOffset = new THREE.Vector3(0, 0.7, 1.3); // 第三人称相机偏移（更近距离）
+    
+    // 🔥 修改：鲸鱼动画状态跟踪
+    this.whaleIsMoving = false; // 鲸鱼是否正在移动
+    this.whaleLastMoveTime = 0; // 最后移动时间戳
+    this.whaleIdleTimeout = 500; // 停止移动后多长时间切换到空闲动画（毫秒）
+    this.currentPlayingAnimations = new Set(); // 当前播放的动画名称集合
     this.thirdPersonControls = {
       enabled: false,
       sensitivity: 0.002,
@@ -663,7 +670,7 @@ export default class ZThree {
         this.whalePosition.z += moveVector.z;
         this.whaleModel.position.copy(this.whalePosition);
         
-        // 🔥 新增：鲸鱼朝向跟随移动方向
+        // 🔥 新增：鲸鱼朝向跟随移动方向和动画控制
         if (moveVector.length() > 0.001) {
           // 计算鲸鱼应该面向的方向（移动方向）
           const targetRotation = Math.atan2(moveVector.x, moveVector.z);
@@ -680,13 +687,11 @@ export default class ZThree {
           this.whaleModel.rotation.y += rotationDiff * 0.1;
           this.whaleRotation.y = this.whaleModel.rotation.y;
           
-          // 播放游泳动画
-          if (this.whaleMixer && Object.keys(this.whaleAnimations).length > 0) {
-            const firstAnimationName = Object.keys(this.whaleAnimations)[0];
-            if (!this.whaleAnimations[firstAnimationName].isRunning()) {
-              this.playWhaleAnimation(firstAnimationName);
-            }
-          }
+          // 🔥 优化：智能动画播放控制
+          this.startWhaleMovementAnimation();
+          
+          // 记录移动状态
+          this.whaleLastMoveTime = Date.now();
         }
       }
     } else {
@@ -1686,22 +1691,18 @@ export default class ZThree {
         this.whaleModel.visible = false;
         this.scene.add(this.whaleModel);
         
-        // 初始化动画
-        if (gltf.animations && gltf.animations.length > 0) {
-          this.whaleMixer = new THREE.AnimationMixer(this.whaleModel);
-          
-          // 缓存所有动画
-          gltf.animations.forEach((clip) => {
-            const action = this.whaleMixer.clipAction(clip);
-            this.whaleAnimations[clip.name] = action;
-            console.log('🎭 缓存鲸鱼动画:', clip.name);
+        // 🔥 修改：保存动画数据，但不立即初始化动画
+        this.whaleAnimationClips = gltf.animations || [];
+        
+        if (this.whaleAnimationClips.length > 0) {
+          console.log('🐋 鲸鱼模型动画数据已保存:');
+          console.log('📋 动画总数:', this.whaleAnimationClips.length);
+          this.whaleAnimationClips.forEach((clip, index) => {
+            console.log(`🎭 [${index + 1}] 动画名称: "${clip.name}" - 时长: ${clip.duration.toFixed(2)}s - 轨道数: ${clip.tracks.length}`);
           });
-          
-          // 如果有动画，播放第一个作为默认动画
-          if (Object.keys(this.whaleAnimations).length > 0) {
-            const firstAnimationName = Object.keys(this.whaleAnimations)[0];
-            this.playWhaleAnimation(firstAnimationName);
-          }
+          console.log('💡 动画将在切换到第三人称模式时加载');
+        } else {
+          console.log('⚠️ 鲸鱼模型没有动画数据');
         }
         
         console.log('🐋 鲸鱼模型初始化完成');
@@ -1718,25 +1719,187 @@ export default class ZThree {
     });
   }
 
-  // 🐋 播放鲸鱼动画
-  playWhaleAnimation(animationName) {
+  // 🐋 播放鲸鱼动画 - 支持同时播放多个动画
+  playWhaleAnimation(animationName, loop = true, stopOthers = false) {
     if (!this.whaleMixer || !this.whaleAnimations[animationName]) {
       console.warn('⚠️ 鲸鱼动画未找到:', animationName);
+      console.log('💡 可用动画:', Object.keys(this.whaleAnimations || {}).join(', '));
       return;
     }
     
-    // 停止所有当前动画
-    Object.values(this.whaleAnimations).forEach(action => {
-      action.stop();
-    });
+    const action = this.whaleAnimations[animationName];
+    
+    // 🔥 优化：如果相同动画已经在播放，不需要重新播放
+    if (action.isRunning()) {
+      return;
+    }
+    
+    // 🔥 修改：只有在 stopOthers 为 true 时才停止其他动画
+    if (stopOthers) {
+      Object.entries(this.whaleAnimations).forEach(([name, otherAction]) => {
+        if (otherAction !== action && otherAction.isRunning()) {
+          otherAction.stop();
+          console.log('⏹️ 停止动画:', name);
+        }
+      });
+    }
     
     // 播放指定动画
-    const action = this.whaleAnimations[animationName];
     action.reset();
-    action.setLoop(THREE.LoopRepeat);
+    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce);
+    action.timeScale = 2.0; // 🔥 新增：设置播放速度为2倍（提高一倍速度）
     action.play();
     
-    console.log('🎭 播放鲸鱼动画:', animationName);
+    // 🔥 新增：记录当前播放的动画（支持多个）
+    if (!this.currentPlayingAnimations) {
+      this.currentPlayingAnimations = new Set();
+    }
+    this.currentPlayingAnimations.add(animationName);
+  }
+
+  // 🐋 停止鲸鱼动画
+  stopWhaleAnimation(animationName = null) {
+    if (!this.whaleMixer || !this.whaleAnimations) return;
+    
+    if (animationName && this.whaleAnimations[animationName]) {
+      // 停止指定动画
+      this.whaleAnimations[animationName].stop();
+      console.log('⏹️ 停止鲸鱼动画:', animationName);
+    } else {
+      // 停止所有动画
+      Object.values(this.whaleAnimations).forEach(action => {
+        if (action.isRunning()) {
+          action.stop();
+        }
+      });
+      console.log('⏹️ 停止所有鲸鱼动画');
+    }
+  }
+
+  // 🐋 获取可用的鲸鱼动画列表
+  getWhaleAnimations() {
+    if (!this.whaleAnimations || !this.whaleMixer) return [];
+    return Object.keys(this.whaleAnimations);
+  }
+
+  // 🔥 新增：初始化鲸鱼动画系统（在切换到第三人称时调用）
+  initWhaleAnimations() {
+    if (!this.whaleModel || !this.whaleAnimationClips || this.whaleAnimationClips.length === 0) {
+      console.log('⚠️ 无法初始化鲸鱼动画：模型或动画数据不存在');
+      return false;
+    }
+    
+    // 如果已经初始化过，直接返回
+    if (this.whaleMixer && this.whaleAnimations) {
+      console.log('🎭 鲸鱼动画系统已初始化');
+      return true;
+    }
+    
+    console.log('🔧 正在初始化鲸鱼动画系统...');
+    
+    // 创建动画混合器
+    this.whaleMixer = new THREE.AnimationMixer(this.whaleModel);
+    this.whaleAnimations = {};
+    
+    // 缓存所有动画
+    this.whaleAnimationClips.forEach((clip, index) => {
+      const action = this.whaleMixer.clipAction(clip);
+      this.whaleAnimations[clip.name] = action;
+      console.log(`🎭 缓存动画 [${index + 1}]: "${clip.name}"`);
+    });
+    
+    // 🔥 新增：为每个动画添加调试方法
+    window.playWhaleAnimation = (animationName) => {
+      if (this.whaleAnimations && this.whaleAnimations[animationName]) {
+        this.playWhaleAnimation(animationName);
+        console.log('✅ 手动播放动画:', animationName);
+      } else {
+        console.log('❌ 动画不存在:', animationName);
+        console.log('💡 可用动画:', Object.keys(this.whaleAnimations || {}).join(', '));
+      }
+    };
+    
+    window.listWhaleAnimations = () => {
+      if (this.whaleAnimations) {
+        console.log('🐋 当前可用的鲸鱼动画:');
+        Object.keys(this.whaleAnimations).forEach((name, index) => {
+          console.log(`  ${index + 1}. ${name}`);
+        });
+        console.log('💡 使用 playWhaleAnimation("动画名称") 来播放指定动画');
+      } else {
+        console.log('⚠️ 鲸鱼动画系统尚未初始化');
+      }
+    };
+    
+    console.log('✅ 鲸鱼动画系统初始化完成');
+    console.log('📋 可用动画:', Object.keys(this.whaleAnimations).join(', '));
+    
+    return true;
+  }
+
+  // 🔥 修改：开始鲸鱼移动动画 - 播放所有动画
+  startWhaleMovementAnimation() {
+    if (!this.whaleModel) return;
+    
+    // 🔥 确保动画系统已初始化
+    if (!this.initWhaleAnimations()) {
+      console.log('⚠️ 无法启动鲸鱼动画：初始化失败');
+      return;
+    }
+    
+    const availableAnimations = this.getWhaleAnimations();
+    if (availableAnimations.length === 0) {
+      console.log('⚠️ 鲸鱼模型没有可用动画');
+      return;
+    }
+    
+    console.log(`🎭 播放鲸鱼所有动画 (${availableAnimations.length}个):`);
+    
+    // 🔥 播放所有可用动画
+    availableAnimations.forEach((animationName) => {
+      this.playWhaleAnimation(animationName, true);
+      console.log(`   ✅ 播放动画: "${animationName}"`);
+    });
+    
+    // 设置标记，表示鲸鱼正在移动
+    this.whaleIsMoving = true;
+  }
+
+  // 🔥 修改：停止鲸鱼移动动画 - 停止所有动画
+  stopWhaleMovementAnimation() {
+    if (!this.whaleModel) return;
+    
+    // 如果动画系统未初始化，直接返回
+    if (!this.whaleMixer || !this.whaleAnimations) {
+      console.log('💡 鲸鱼动画系统未初始化，无需停止动画');
+      this.whaleIsMoving = false;
+      return;
+    }
+    
+    const availableAnimations = this.getWhaleAnimations();
+    if (availableAnimations.length === 0) {
+      console.log('⚠️ 鲸鱼模型没有可用动画');
+      return;
+    }
+    
+    console.log(`⏹️ 停止鲸鱼所有动画 (${availableAnimations.length}个):`);
+    
+    // 🔥 停止所有动画
+    availableAnimations.forEach((animationName) => {
+      const action = this.whaleAnimations[animationName];
+      if (action && action.isRunning()) {
+        action.stop();
+        console.log(`   ⏹️ 停止动画: "${animationName}"`);
+      }
+    });
+    
+    // 清除动画记录
+    if (this.currentPlayingAnimations) {
+      this.currentPlayingAnimations.clear();
+    }
+    
+    // 清除移动标记
+    this.whaleIsMoving = false;
   }
 
   // 🐋 切换视角模式
@@ -1770,10 +1933,12 @@ export default class ZThree {
       this.thirdPersonControls.euler.y = Math.atan2(cameraDirection.x, cameraDirection.z);
       this.thirdPersonControls.euler.x = 0; // 初始时水平视角
       
-      // 播放鲸鱼游泳动画
-      if (Object.keys(this.whaleAnimations).length > 0) {
-        const firstAnimationName = Object.keys(this.whaleAnimations)[0];
-        this.playWhaleAnimation(firstAnimationName);
+      // 🔥 修改：第三人称模式时初始化并播放鲸鱼动画
+      if (this.initWhaleAnimations()) {
+        this.startWhaleMovementAnimation(); // 播放所有动画
+        console.log('🎭 第三人称模式：动画系统已初始化并开始播放');
+      } else {
+        console.log('⚠️ 第三人称模式：无法初始化鲸鱼动画系统');
       }
       
       // 立即更新相机位置到正确的第三人称位置
@@ -1823,6 +1988,14 @@ export default class ZThree {
     
     // 设置相机位置（鲸鱼位置 + 旋转后的偏移）
     const cameraTargetPosition = this.whalePosition.clone().add(rotatedOffset);
+    
+    // 🔥 新增：确保相机不低于地面
+    const minGroundHeight = 0.2; // 相机距离地面的最小高度（20厘米）
+    if (cameraTargetPosition.y < minGroundHeight) {
+      cameraTargetPosition.y = minGroundHeight;
+      // console.log('📏 第三人称相机高度已限制在地面以上:', minGroundHeight + 'm');
+    }
+    
     this.camera.position.copy(cameraTargetPosition);
     
     // 相机始终看向鲸鱼
@@ -1958,6 +2131,12 @@ export default class ZThree {
       }, option.duration)
         .easing(option.easing);
         
+      // 🔥 新增：飞行开始时播放游泳动画
+      tween.onStart(() => {
+        this.startWhaleMovementAnimation();
+        console.log('🐋 开始飞行，播放游泳动画');
+      });
+        
       tween.onUpdate(() => {
         // 更新鲸鱼位置和旋转
         this.whalePosition.set(tween._object.x, tween._object.y, tween._object.z);
@@ -1965,9 +2144,17 @@ export default class ZThree {
         this.whaleModel.rotation.y = tween._object.rotY;
         
         // 相机会自动通过updateThirdPersonCamera跟随
+        
+        // 🔥 新增：持续更新移动时间，保持游泳动画
+        this.whaleLastMoveTime = Date.now();
       });
       
       tween.onComplete(() => {
+        // 🔥 新增：飞行结束后延迟切换到空闲动画
+        setTimeout(() => {
+          this.stopWhaleMovementAnimation();
+        }, this.whaleIdleTimeout);
+        
         if (option.done) option.done();
         console.log('🐋 第三人称飞行完成');
       });
@@ -2202,9 +2389,18 @@ export default class ZThree {
       // 而不是依赖于isMoving状态，避免漫游结束后控制卡顿
       _this.updateCameraMovement();
 
-      // 🐋 更新鲸鱼动画
+      // 🐋 更新鲸鱼动画和状态
       if (_this.whaleMixer) {
         _this.whaleMixer.update(0.016); // 假设60fps
+        
+        // 🔥 新增：检查鲸鱼是否应该切换到空闲状态
+        if (_this.thirdPersonMode && _this.whaleIsMoving && _this.whaleLastMoveTime > 0) {
+          const timeSinceLastMove = Date.now() - _this.whaleLastMoveTime;
+          if (timeSinceLastMove > _this.whaleIdleTimeout) {
+            _this.stopWhaleMovementAnimation();
+            _this.whaleLastMoveTime = 0; // 重置时间戳
+          }
+        }
       }
 
       // 🐋 在第三人称模式下更新相机位置
