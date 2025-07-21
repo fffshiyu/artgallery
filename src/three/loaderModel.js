@@ -328,7 +328,7 @@ function initCustomTextureSystem(app) {
     }
   });
   
-  console.log('🔍 检测到画作模型:', detectedPictures.length, '个', detectedPictures);
+  // console.log('🔍 检测到画作模型:', detectedPictures.length, '个', detectedPictures);
   
   // 动态获取支持自定义上传的画作列表
   import('@/assets/data.js').then((dataModule) => {
@@ -338,7 +338,7 @@ function initCustomTextureSystem(app) {
     // 🚀 获取动态计算的可上传位置列表
     const customPictures = dataModule.getCustomUploadPictures();
     
-    console.log('🎨 动态可上传位置:', customPictures.length, '个', customPictures);
+    // console.log('🎨 动态可上传位置:', customPictures.length, '个', customPictures);
     
     // 存储原始材质和模型引用
     app.customPictureModels = {};
@@ -355,9 +355,9 @@ function initCustomTextureSystem(app) {
         
         // 检查是否为可上传位置
         if (customPictures.includes(obj.name)) {
-          console.log('✅ 可上传画作模型:', obj.name);
+          // console.log('✅ 可上传画作模型:', obj.name);
         } else {
-          console.log('📋 有数据的画作模型:', obj.name);
+          // console.log('📋 有数据的画作模型:', obj.name);
         }
         
         // 延迟加载纹理，确保模型完全初始化
@@ -368,16 +368,16 @@ function initCustomTextureSystem(app) {
     });
 
     // 自定义纹理系统初始化完成
-    console.log('🎨 动态纹理系统初始化完成，总画作:', detectedPictures.length, '个，可上传:', customPictures.length, '个');
+    // console.log('🎨 动态纹理系统初始化完成，总画作:', detectedPictures.length, '个，可上传:', customPictures.length, '个');
     
     // 🚀 注册数据更新回调，当 picData 变化时更新纹理
     const unsubscribe = dataModule.registerDataUpdateCallback((updatedPicData) => {
-      console.log('🔄 3D场景收到数据更新通知，开始更新纹理...');
+      // console.log('🔄 3D场景收到数据更新通知，开始更新纹理...');
       updateAllTexturesFromData(app, updatedPicData);
       
       // 🚀 数据更新后，重新计算可上传位置
       const newCustomPictures = dataModule.getCustomUploadPictures();
-      console.log('🔄 重新计算可上传位置:', newCustomPictures.length, '个');
+      // console.log('🔄 重新计算可上传位置:', newCustomPictures.length, '个');
     });
     
     // 保存取消订阅函数，以便后续清理
@@ -404,7 +404,7 @@ function initCustomTextureSystem(app) {
 function updateAllTexturesFromData(app, updatedPicData) {
   if (!app.customPictureModels) return;
   
-  console.log('🔄 开始更新所有画作纹理...');
+  // console.log('🔄 开始更新所有画作纹理...');
   
   // 遍历所有自定义画作模型
   Object.keys(app.customPictureModels).forEach(picName => {
@@ -413,11 +413,11 @@ function updateAllTexturesFromData(app, updatedPicData) {
       // 检查是否有对应的新数据
       const artworkData = updatedPicData[picName];
       if (artworkData) {
-        console.log(`🔄 更新纹理: ${picName} - ${artworkData.title}`);
+        // console.log(`🔄 更新纹理: ${picName} - ${artworkData.title}`);
         // 使用新数据更新纹理
         loadDefaultTextureFromPicData(app, picName);
       } else {
-        console.log(`ℹ️ 画作 ${picName} 暂无数据，保持默认纹理`);
+        // console.log(`ℹ️ 画作 ${picName} 暂无数据，保持默认纹理`);
       }
     }
   });
@@ -452,7 +452,7 @@ function loadDefaultTextureFromPicData(app, picName) {
     
     // 🔧 新增：如果没有数据（返回null），则不加载任何纹理
     if (!pictureData) {
-      console.log(`ℹ️ ${picName} 没有API数据，跳过纹理加载`);
+      // console.log(`ℹ️ ${picName} 没有API数据，跳过纹理加载`);
       return;
     }
     
@@ -462,18 +462,18 @@ function loadDefaultTextureFromPicData(app, picName) {
       
       // 🔧 新增：如果imageUrl为空，跳过加载
       if (!imageUrl) {
-        console.log(`ℹ️ ${picName} 没有图片URL，跳过纹理加载`);
+        // console.log(`ℹ️ ${picName} 没有图片URL，跳过纹理加载`);
         return;
       }
       
       // 对于外部URL，直接使用；对于本地路径，使用 loadImageAsync 处理
       if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
         // 外部URL，直接使用
-        console.log(`🌐 ${picName} 使用外部图片URL:`, imageUrl);
+        // console.log(`🌐 ${picName} 使用外部图片URL:`, imageUrl);
         updateCustomTexture(app, picName, imageUrl);
       } else {
         // 本地路径，使用 loadImageAsync 处理
-        console.log(`📁 ${picName} 使用本地图片路径:`, imageUrl);
+        // console.log(`📁 ${picName} 使用本地图片路径:`, imageUrl);
         loadImageAsync(imageUrl).then((processedUrl) => {
           updateCustomTexture(app, picName, processedUrl);
         }).catch((error) => {
@@ -481,7 +481,7 @@ function loadDefaultTextureFromPicData(app, picName) {
         });
       }
     } else {
-      console.log(`ℹ️ ${picName} 暂无图片数据，跳过纹理加载`);
+      // console.log(`ℹ️ ${picName} 暂无图片数据，跳过纹理加载`);
     }
   }).catch((error) => {
     console.error('❌ 导入 data.js 失败:', error);

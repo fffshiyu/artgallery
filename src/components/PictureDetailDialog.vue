@@ -1,3 +1,5 @@
+<!-- eslint-disable no-mixed-spaces-and-tabs -->
+<!-- eslint-disable no-mixed-spaces-and-tabs -->
 <template>
   <div class="picture-detail-overlay" v-if="visible" @click="closeDialog">
     <div class="picture-detail-dialog" @click.stop>
@@ -37,9 +39,9 @@
         </div>
         
         <div class="picture-info-section">
-          <div class="info-item">
-            <label class="info-label">作者：</label>
-            <span class="info-value">{{ currentWork.author }}</span>
+          <div class="info-item author-info">
+            <label class="info-label">作者：{{ currentWork.author }}</label>
+			<a :href="host + '/blog/' + currentWork.userid" target="_blank" class="author-homepage-link">进入作者主页</a>
           </div>
           
           <div class="info-item description">
@@ -92,6 +94,7 @@ export default {
       
       // 新增：图片缩放状态
       imageZoomVisible: false,
+   host:'https://www.cidea.cn'
     };
   },
   computed: {
@@ -189,7 +192,7 @@ export default {
         }
       }
       
-      console.log('关闭画作详情弹窗');
+      // console.log('关闭画作详情弹窗');
     },
 
     // 新增：打开图片缩放
@@ -236,8 +239,8 @@ export default {
       // 获取弹窗当前尺寸
       const dialogRect = dialog.getBoundingClientRect();
       
-      console.log('视口尺寸:', { width: viewportWidth, height: viewportHeight });
-      console.log('弹窗尺寸:', { width: dialogRect.width, height: dialogRect.height });
+      // console.log('视口尺寸:', { width: viewportWidth, height: viewportHeight });
+      // console.log('弹窗尺寸:', { width: dialogRect.width, height: dialogRect.height });
       
       // 计算安全边距
       const safeMargin = {
@@ -256,14 +259,14 @@ export default {
         dialog.style.width = `${maxWidth}px`;
         dialog.style.maxWidth = `${maxWidth}px`;
         needsResize = true;
-        console.log('调整弹窗宽度:', maxWidth);
+        // console.log('调整弹窗宽度:', maxWidth);
       }
       
       if (dialogRect.height > maxHeight) {
         dialog.style.height = `${maxHeight}px`;
         dialog.style.maxHeight = `${maxHeight}px`;
         needsResize = true;
-        console.log('调整弹窗高度:', maxHeight);
+        // console.log('调整弹窗高度:', maxHeight);
       }
       
       // 特殊设备适配
@@ -286,11 +289,11 @@ export default {
         if (imageSection) {
           const availableHeight = maxHeight - 200; // 减去头部和内边距
           imageSection.style.maxHeight = `${availableHeight}px`;
-          console.log('调整图片区域最大高度:', availableHeight);
+          // console.log('调整图片区域最大高度:', availableHeight);
         }
       }
       
-      console.log('✅ 弹窗自适应调整完成');
+      // console.log('✅ 弹窗自适应调整完成');
     },
 
     // 处理特殊设备的适配
@@ -327,7 +330,7 @@ export default {
           infoSection.style.overflowY = 'auto'; // 允许信息区域滚动
         }
         
-        console.log('📱 应用移动设备适配 - 优化高图片显示');
+        // console.log('📱 应用移动设备适配 - 优化高图片显示');
       }
       
       // 小屏幕设备（如480px以下）
@@ -361,7 +364,7 @@ export default {
           infoSection.style.overflowY = 'auto'; // 允许信息区域滚动
         }
         
-        console.log('📱 应用超小屏幕设备适配 - 优化高图片显示');
+        // console.log('📱 应用超小屏幕设备适配 - 优化高图片显示');
       }
       
       // 横屏模式特殊处理
@@ -375,13 +378,13 @@ export default {
           dialogContent.style.maxHeight = 'calc(95vh - 100px)';
         }
         
-        console.log('📱 应用横屏模式适配');
+        // console.log('📱 应用横屏模式适配');
       }
       
       // 超宽屏幕处理
       if (viewportWidth > 1920) {
         dialog.style.maxWidth = '1400px'; // 限制最大宽度
-        console.log('🖥️ 应用超宽屏幕限制');
+        // console.log('🖥️ 应用超宽屏幕限制');
       }
     },
 
@@ -414,7 +417,7 @@ export default {
              closeBtn.style.fontSize = '22px';
            }
            
-           console.log('📱 强制应用超小屏幕header样式: padding 5px 15px');
+           // console.log('📱 强制应用超小屏幕header样式: padding 5px 15px');
          } else {
            // 普通手机屏幕
            if (title) {
@@ -428,7 +431,7 @@ export default {
              closeBtn.style.fontSize = '24px';
            }
            
-           console.log('📱 强制应用手机header样式: padding 5px 15px');
+           // console.log('📱 强制应用手机header样式: padding 5px 15px');
          }
       } else {
         // 桌面版本 - 恢复原始样式
@@ -446,7 +449,7 @@ export default {
           closeBtn.style.fontSize = '40px';
         }
         
-        console.log('🖥️ 应用桌面header样式: padding 32px 40px');
+        // console.log('🖥️ 应用桌面header样式: padding 32px 40px');
       }
     },
 
@@ -631,6 +634,28 @@ export default {
   
   &.description {
     flex: 1;
+  }
+}
+
+.author-info {
+  flex-direction: row; /* 让作者信息和链接并列 */
+  justify-content: space-between; /* 链接在右侧 */
+  align-items: center; /* 垂直居中对齐 */
+}
+
+.author-homepage-link {
+  color: rgba(255, 255, 255, 0.7); /* 白色带透明度 */
+  font-size: 16px; /* 调整字体大小 */
+  text-decoration: none; /* 移除下划线 */
+  border: 1px solid rgba(255, 255, 255, 0.3); /* 添加边框 */
+  padding: 6px 12px; /* 调整内边距 */
+  border-radius: 8px; /* 圆角 */
+  transition: all 0.3s ease; /* 添加过渡效果 */
+  
+  &:hover {
+    color: #fff; /* 悬停时颜色变白 */
+    background-color: rgba(255, 255, 255, 0.1); /* 悬停时背景透明度增加 */
+    border-color: rgba(255, 255, 255, 0.7); /* 悬停时边框颜色变亮 */
   }
 }
 

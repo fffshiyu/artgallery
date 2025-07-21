@@ -55,6 +55,29 @@ export default class ZThree {
     
     // 🔥 修复：使用时间戳来区分拖拽和点击，替代布尔标记
     this.lastDragEndTime = 0;
+    
+    // 🐋 第三人称视角相关变量
+    this.thirdPersonMode = false; // 是否处于第三人称模式
+    this.whaleModel = null; // 鲸鱼模型
+    this.whaleMixer = null; // 鲸鱼动画混合器
+    this.whaleAnimations = {}; // 鲸鱼动画缓存
+    this.whalePosition = new THREE.Vector3(0, 1.8, 0); // 鲸鱼位置（1.8米，不遮挡画作）
+    this.whaleRotation = new THREE.Euler(0, 0, 0); // 鲸鱼旋转
+    this.cameraOffset = new THREE.Vector3(0, 0.7, 1.3); // 第三人称相机偏移（更近距离）
+    this.thirdPersonControls = {
+      enabled: false,
+      sensitivity: 0.002,
+      euler: new THREE.Euler(0, 0, 0, 'YXZ'),
+      isMouseDown: false,
+      isTouchActive: false,
+      lastMouseX: 0,
+      lastMouseY: 0,
+      lastTouchX: 0,
+      lastTouchY: 0
+    };
+
+    // 🔥 新增：用于跟踪上次报告的加载进度，防止倒退
+    this.lastReportedProgress = 0;
   }
 
   // 初始化场景
@@ -121,10 +144,10 @@ export default class ZThree {
       if (event.repeat) return;
       
       // 🔥 添加调试日志
-      console.log('⌨️ 键盘按下:', event.code, '当前状态:', {
-        isMoving: _this.isMoving,
-        controlsEnabled: _this.controls ? _this.controls.enabled : 'N/A'
-      });
+      // console.log('⌨️ 键盘按下:', event.code, '当前状态:', {
+      //   isMoving: _this.isMoving,
+      //   controlsEnabled: _this.controls ? _this.controls.enabled : 'N/A'
+      // });
       
       switch (event.code) {
         case 'KeyW':
@@ -146,16 +169,16 @@ export default class ZThree {
       }
       
       // 🔥 添加调试日志
-      console.log('⌨️ 键盘按下后状态:', {
-        keys: _this.keys,
-        isMoving: _this.isMoving
-      });
+      // console.log('⌨️ 键盘按下后状态:', {
+      //   keys: _this.keys,
+      //   isMoving: _this.isMoving
+      // });
     });
 
     // 键盘松开事件
     document.addEventListener('keyup', (event) => {
       // 🔥 添加调试日志
-      console.log('⌨️ 键盘松开:', event.code);
+      // console.log('⌨️ 键盘松开:', event.code);
       
       switch (event.code) {
         case 'KeyW':
@@ -174,7 +197,7 @@ export default class ZThree {
       
       // 检查是否所有按键都松开了
       const hasAnyKey = _this.keys.w || _this.keys.a || _this.keys.s || _this.keys.d;
-      console.log('⌨️ 松开后按键状态:', _this.keys, '还有按键:', hasAnyKey);
+      // console.log('⌨️ 松开后按键状态:', _this.keys, '还有按键:', hasAnyKey);
       
       if (!hasAnyKey) {
         // 清除之前的超时
@@ -242,15 +265,15 @@ export default class ZThree {
       display: ${initialDisplay};
     `;
     
-    console.log(`🎮 摇杆初始化 - 位置: 左下角, 设备: ${isMobile ? '移动端' : '网页端'}, 初始状态: ${initialDisplay}, 窗口宽度: ${window.innerWidth}px, 触摸支持: ${'ontouchstart' in window}, UserAgent: ${navigator.userAgent.includes('Mobile') ? '移动设备' : '桌面设备'}`);
+    // console.log(`🎮 摇杆初始化 - 位置: 左下角, 设备: ${isMobile ? '移动端' : '网页端'}, 初始状态: ${initialDisplay}, 窗口宽度: ${window.innerWidth}px, 触摸支持: ${'ontouchstart' in window}, UserAgent: ${navigator.userAgent.includes('Mobile') ? '移动设备' : '桌面设备'}`);
     
     // 🔥 延迟确认摇杆初始化完成
     setTimeout(() => {
       console.log('✅ 摇杆初始化完成！');
-      console.log(`🎮 摇杆当前状态: ${initialDisplay === 'block' ? '显示' : '隐藏'}`);
-      console.log(`📱 设备类型: ${isMobile ? '移动端 - 摇杆默认隐藏，可通过右上角按钮显示' : '网页端 - 摇杆默认显示，可通过按钮切换'}`);
-      console.log('💡 如果摇杆无法移动，请在控制台中运行：window.app.testJoystickStatus()');
-      console.log('🚀 快速测试所有控制功能：window.app.quickTestAllControls()');
+      // console.log(`🎮 摇杆当前状态: ${initialDisplay === 'block' ? '显示' : '隐藏'}`);
+      // console.log(`📱 设备类型: ${isMobile ? '移动端 - 摇杆默认隐藏，可通过右上角按钮显示' : '网页端 - 摇杆默认显示，可通过按钮切换'}`);
+      // console.log('💡 如果摇杆无法移动，请在控制台中运行：window.app.testJoystickStatus()');
+      // console.log('🚀 快速测试所有控制功能：window.app.quickTestAllControls()');
     }, 100);
     
     // 添加四个方向三角形指示器
@@ -374,7 +397,7 @@ export default class ZThree {
       _this.joystickData.y = 0;
       _this.joystickData.active = false; // 开始时设为false，等move事件激活
       
-      console.log('🕹️ 摇杆开始 - 准备接收输入');
+      // console.log('🕹️ 摇杆开始 - 准备接收输入');
       
       // 🔥 修复：不再禁用OrbitControls，让摇杆和鼠标控制并存
       // 这样用户可以同时使用摇杆移动和鼠标旋转视角
@@ -393,29 +416,29 @@ export default class ZThree {
         // _this.isMoving = true;
         
         // 调试信息：显示摇杆数据 - 更频繁显示以便调试
-        if (Math.random() < 0.02) { // 降低日志频率
-        console.log('🕹️ 摇杆移动:', {
-          x: data.vector.x.toFixed(3),
-          y: data.vector.y.toFixed(3),
-          distance: data.distance.toFixed(3),
-          angle: data.angle ? (data.angle.degree.toFixed(1) + '°') : 'N/A',
-          force: data.force.toFixed(3)
-        });
-        }
+        // if (Math.random() < 0.02) { // 降低日志频率
+        // console.log('🕹️ 摇杆移动:', {
+        //   x: data.vector.x.toFixed(3),
+        //   y: data.vector.y.toFixed(3),
+        //   distance: data.distance.toFixed(3),
+        //   angle: data.angle ? (data.angle.degree.toFixed(1) + '°') : 'N/A',
+        //   force: data.force.toFixed(3)
+        // });
+        // }
       } else {
         // 如果拖拽距离太小，停止移动
         _this.joystickData.x = 0;
         _this.joystickData.y = 0;
         _this.joystickData.active = false;
-        if (Math.random() < 0.02) {
-        console.log('🕹️ 摇杆距离太小，停止移动:', data.distance?.toFixed(3));
-        }
+        // if (Math.random() < 0.02) {
+        // console.log('🕹️ 摇杆距离太小，停止移动:', data.distance?.toFixed(3));
+        // }
       }
     });
     
     // 摇杆停止移动
     this.joystick.on('end', function() {
-      console.log('🕹️ 摇杆结束 - 停止移动');
+      // console.log('🕹️ 摇杆结束 - 停止移动');
       
       _this.joystickData.active = false;
       _this.joystickData.x = 0;
@@ -432,8 +455,7 @@ export default class ZThree {
           console.log('🕹️ 摇杆移动结束，但键盘仍有输入，保持移动状态');
         }
         
-        // 🔥 移除：不再处理OrbitControls状态，因为我们没有禁用它
-        // 🔥 移除：不再重置观看状态，允许用户在观看画作时使用摇杆
+      
         
       }, 50);
     });
@@ -460,9 +482,7 @@ export default class ZThree {
       this.joystickData.x = 0;
       this.joystickData.y = 0;
     }
-    
-    // 🔥 移除：不再强制显示摇杆，保持原有显示状态
-    // this.ensureJoystickVisible(); // 已移除强制显示逻辑
+
     
     // 重置观看状态
     this.currentViewingPicture = null;
@@ -519,18 +539,18 @@ export default class ZThree {
     const hasJoystickMovement = this.joystickData.active;
     
     // 🔥 添加详细调试日志
-    if (hasKeyboardMovement || hasJoystickMovement) {
-      if (Math.random() < 0.1) { // 降低日志频率，避免刷屏
-        console.log('🎮 移动检测:', {
-          hasKeyboard: hasKeyboardMovement,
-          hasJoystick: hasJoystickMovement,
-          isMoving: this.isMoving,
-          controlsEnabled: this.controls ? this.controls.enabled : 'N/A',
-          keys: this.keys,
-          joystickData: this.joystickData
-        });
-      }
-    }
+    // if (hasKeyboardMovement || hasJoystickMovement) {
+    //   if (Math.random() < 0.1) { // 降低日志频率，避免刷屏
+    //     console.log('🎮 移动检测:', {
+    //       hasKeyboard: hasKeyboardMovement,
+    //       hasJoystick: hasJoystickMovement,
+    //       isMoving: this.isMoving,
+    //       controlsEnabled: this.controls ? this.controls.enabled : 'N/A',
+    //       keys: this.keys,
+    //       joystickData: this.joystickData
+    //     });
+    //   }
+    // }
     
     // 🔥 优化：如果没有任何输入且不在移动状态，直接返回，避免不必要的处理
     if (!hasKeyboardMovement && !hasJoystickMovement && !this.isMoving) {
@@ -553,7 +573,7 @@ export default class ZThree {
     if (!this.isMoving) {
       this.isMoving = true;
       // 🔥 修复：不再禁用OrbitControls，让摇杆和键盘与鼠标控制并存
-      console.log('🎮 开始移动（WASD/摇杆）');
+      // console.log('🎮 开始移动（WASD/摇杆）');
     }
 
     // 使用更平滑的阻尼系数
@@ -566,8 +586,8 @@ export default class ZThree {
     
     // 键盘输入
     if (hasKeyboardMovement) {
-      directionZ = Number(this.keys.w) - Number(this.keys.s);
-      directionX = Number(this.keys.d) - Number(this.keys.a);
+      directionZ = Number(this.keys.w) - Number(this.keys.s); // W前进，S后退
+      directionX = Number(this.keys.d) - Number(this.keys.a); // D右移，A左移
     }
     
     // 虚拟摇杆输入（如果摇杆激活，优先使用摇杆输入）
@@ -576,12 +596,12 @@ export default class ZThree {
       directionX = this.joystickData.x; // 左右移动
       
       // 调试信息：显示处理后的方向
-      if (Math.random() < 0.05) { // 降低日志频率
-        console.log('🎮 摇杆方向处理:', {
-          原始数据: { x: this.joystickData.x.toFixed(3), y: this.joystickData.y.toFixed(3) },
-          处理后: { directionX: directionX.toFixed(3), directionZ: directionZ.toFixed(3) }
-        });
-      }
+      // if (Math.random() < 0.05) { // 降低日志频率
+      //   console.log('🎮 摇杆方向处理:', {
+      //     原始数据: { x: this.joystickData.x.toFixed(3), y: this.joystickData.y.toFixed(3) },
+      //     处理后: { directionX: directionX.toFixed(3), directionZ: directionZ.toFixed(3) }
+      //   });
+      // }
     }
     
     this.direction.z = directionZ;
@@ -590,23 +610,80 @@ export default class ZThree {
 
     // 应用移动速度到速度向量
     if (hasKeyboardMovement) {
-      if (this.keys.w || this.keys.s) this.velocity.z -= this.direction.z * this.moveSpeed;
-      if (this.keys.a || this.keys.d) this.velocity.x -= this.direction.x * this.moveSpeed;
+      if (this.keys.w || this.keys.s) this.velocity.z += this.direction.z * this.moveSpeed;
+      if (this.keys.a || this.keys.d) this.velocity.x += this.direction.x * this.moveSpeed;
     }
     
     if (hasJoystickMovement) {
       // 虚拟摇杆的移动强度基于摇杆偏移量
-      this.velocity.z -= this.direction.z * this.moveSpeed;
-      this.velocity.x -= this.direction.x * this.moveSpeed;
+      this.velocity.z += this.direction.z * this.moveSpeed;
+      this.velocity.x += this.direction.x * this.moveSpeed;
     }
 
     // 🔥 添加速度调试
-    if (Math.random() < 0.05) {
-      console.log('🎮 计算后的速度:', {
-        velocity: { x: this.velocity.x.toFixed(4), z: this.velocity.z.toFixed(4) },
-        direction: { x: this.direction.x.toFixed(3), z: this.direction.z.toFixed(3) }
-      });
-    }
+    // if (Math.random() < 0.05) {
+    //   console.log('🎮 计算后的速度:', {
+    //     velocity: { x: this.velocity.x.toFixed(4), z: this.velocity.z.toFixed(4) },
+    //     direction: { x: this.direction.x.toFixed(3), z: this.direction.z.toFixed(3) }
+    //   });
+    // }
+
+    // 🐋 第三人称模式：移动鲸鱼而不是相机，使用鲸鱼自身朝向作为参考
+    if (this.thirdPersonMode && this.whaleModel) {
+      // 使用鲸鱼当前朝向计算移动方向
+      const whaleDirection = new THREE.Vector3(0, 0, 1); // 鲸鱼朝向（Z轴正方向）
+      whaleDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.whaleModel.rotation.y);
+      whaleDirection.normalize();
+      
+      // 计算鲸鱼的右方向向量
+      const whaleRight = new THREE.Vector3();
+      whaleRight.crossVectors(whaleDirection, new THREE.Vector3(0, 1, 0)).normalize();
+      
+      // 根据鲸鱼朝向计算移动向量
+      const moveVector = new THREE.Vector3();
+      moveVector.addScaledVector(whaleDirection, this.velocity.z); // 前后移动（按鲸鱼朝向）
+      moveVector.addScaledVector(whaleRight, this.velocity.x); // 左右移动（相对鲸鱼）
+      
+      // 使用鲸鱼位置进行碰撞检测
+      const targetPosition = new THREE.Vector3(
+        this.whalePosition.x + moveVector.x,
+        this.whalePosition.y,
+        this.whalePosition.z + moveVector.z
+      );
+      
+      if (this.checkCollision(this.whalePosition, targetPosition)) {
+        // 移动鲸鱼
+        // const oldWhalePosition = this.whalePosition.clone(); // 🔥 已移除未使用的变量
+        this.whalePosition.x += moveVector.x;
+        this.whalePosition.z += moveVector.z;
+        this.whaleModel.position.copy(this.whalePosition);
+        
+        // 只在实际移动时播放游泳动画（朝向由鼠标拖动控制）
+        if (moveVector.length() > 0.001) {
+          // 播放游泳动画
+          if (this.whaleMixer && Object.keys(this.whaleAnimations).length > 0) {
+            const firstAnimationName = Object.keys(this.whaleAnimations)[0];
+            if (!this.whaleAnimations[firstAnimationName].isRunning()) {
+              this.playWhaleAnimation(firstAnimationName);
+            }
+          }
+        }
+        
+        // 🔥 添加移动调试
+        // if (Math.random() < 0.05) {
+        //   console.log('🐋 鲸鱼移动:', {
+        //     from: { x: oldWhalePosition.x.toFixed(3), z: oldWhalePosition.z.toFixed(3) },
+        //     to: { x: this.whalePosition.x.toFixed(3), z: this.whalePosition.z.toFixed(3) },
+        //     moveVector: { x: moveVector.x.toFixed(4), z: moveVector.z.toFixed(4) }
+        //   });
+        // }
+      } else {
+        // if (Math.random() < 0.1) {
+        //   console.log('🚫 鲸鱼移动被碰撞检测阻止');
+        // }
+      }
+    } else {
+      // 第一人称模式：移动相机，使用相机朝向
 
     // 获取摄像头的方向向量，但只使用水平方向（忽略Y轴旋转）
     const cameraDirection = new THREE.Vector3();
@@ -624,38 +701,37 @@ export default class ZThree {
     
     // 根据摄像头朝向计算移动向量（只在水平面移动）
     const moveVector = new THREE.Vector3();
-    moveVector.addScaledVector(cameraDirection, -this.velocity.z);
-    moveVector.addScaledVector(right, -this.velocity.x);
+    moveVector.addScaledVector(cameraDirection, this.velocity.z);
+    moveVector.addScaledVector(right, this.velocity.x);
     
-    // 碰撞检测：检查移动目标位置是否会撞墙
     const targetPosition = new THREE.Vector3(
       this.camera.position.x + moveVector.x,
       fixedY,
       this.camera.position.z + moveVector.z
     );
     
-    // 如果没有碰撞，才执行移动
     if (this.checkCollision(this.camera.position, targetPosition)) {
-      // 只更新X和Z位置，强制保持Y位置为3米
-      const oldPosition = this.camera.position.clone();
+        // 只更新X和Z位置，强制保持Y位置为2.5米
+      // const oldPosition = this.camera.position.clone(); // 🔥 已移除未使用的变量
       this.camera.position.x += moveVector.x;
       this.camera.position.z += moveVector.z;
-      this.camera.position.y = fixedY; // 强制锁定Y位置为3米
+        this.camera.position.y = fixedY; // 强制锁定Y位置为2.5米
 
       // 🔥 添加移动调试
-      if (Math.random() < 0.05) {
-        console.log('🎮 相机移动:', {
-          from: { x: oldPosition.x.toFixed(3), z: oldPosition.z.toFixed(3) },
-          to: { x: this.camera.position.x.toFixed(3), z: this.camera.position.z.toFixed(3) },
-          moveVector: { x: moveVector.x.toFixed(4), z: moveVector.z.toFixed(4) }
-        });
-      }
+      // if (Math.random() < 0.05) {
+      //   console.log('🎮 相机移动:', {
+      //     from: { x: oldPosition.x.toFixed(3), z: oldPosition.z.toFixed(3) },
+      //     to: { x: this.camera.position.x.toFixed(3), z: this.camera.position.z.toFixed(3) },
+      //     moveVector: { x: moveVector.x.toFixed(4), z: moveVector.z.toFixed(4) }
+      //   });
+      // }
 
       // 🔥 第一人称控制器移动后不需要更新target
     } else {
       // 🔥 添加碰撞调试
-      if (Math.random() < 0.1) {
-        console.log('🚫 移动被碰撞检测阻止');
+      // if (Math.random() < 0.1) {
+      //   console.log('🚫 移动被碰撞检测阻止');
+      // }
       }
     }
   }
@@ -721,9 +797,9 @@ export default class ZThree {
       
       // 如果撞到了，且距离小于安全距离，则阻止移动
       if (hitDistance < safetyDistance) {
-        if (Math.random() < 0.1) { // 降低日志频率
-          console.log(`🚫 阻止移动 - 撞到 ${hitObject.name}, 距离: ${hitDistance.toFixed(2)}, 安全距离: ${safetyDistance}`);
-        }
+        // if (Math.random() < 0.1) { // 降低日志频率
+        //   console.log(`🚫 阻止移动 - 撞到 ${hitObject.name}, 距离: ${hitDistance.toFixed(2)}, 安全距离: ${safetyDistance}`);
+        // }
         return false;
       }
     }
@@ -1261,9 +1337,9 @@ export default class ZThree {
       }
 
       // 🔥 添加调试信息
-      console.log('🖱️ 检测到指针事件:', evt.type);
+      // console.log('🖱️ 检测到指针事件:', evt.type);
       
-      console.log('✅ 执行点击事件处理');
+      // console.log('✅ 执行点击事件处理');
       
       // 获取canvas元素的边界信息
       const rect = this.renderer.domElement.getBoundingClientRect();
@@ -1275,12 +1351,12 @@ export default class ZThree {
         // 触摸事件：使用 changedTouches
         clientX = evt.changedTouches[0].clientX;
         clientY = evt.changedTouches[0].clientY;
-        console.log('📱 触摸事件坐标:', { x: clientX, y: clientY });
+        // console.log('📱 触摸事件坐标:', { x: clientX, y: clientY });
       } else {
         // 鼠标事件：使用 clientX/clientY
         clientX = evt.clientX;
         clientY = evt.clientY;
-        console.log('🖱️ 鼠标事件坐标:', { x: clientX, y: clientY });
+        // console.log('🖱️ 鼠标事件坐标:', { x: clientX, y: clientY });
       }
       
       // 修正坐标计算，使用canvas的相对位置
@@ -1289,14 +1365,14 @@ export default class ZThree {
         y: -((clientY - rect.top) / rect.height) * 2 + 1
       };
       
-      console.log('🎯 标准化坐标:', mouse);
+      // console.log('🎯 标准化坐标:', mouse);
 
       let activeObj = this.fireRaycaster(mouse, models);
       
       if (activeObj) {
-        console.log('🎯 射线命中对象:', activeObj.object.name || '未命名对象');
+        // console.log('🎯 射线命中对象:', activeObj.object.name || '未命名对象');
       } else {
-        console.log('🎯 射线未命中任何对象');
+        // console.log('🎯 射线未命中任何对象');
       }
       
       if (callback) {
@@ -1390,6 +1466,9 @@ export default class ZThree {
     let fileIndex = 0;
     let that = this;
 
+    // 🔥 新增：跟踪每个文件的加载进度 (0-1)
+    const fileProgress = new Array(objFileList.length).fill(0);
+
     function iterateLoadForIt() {
       that.loaderModel({
         type: objFileList[fileIndex].type,
@@ -1398,20 +1477,65 @@ export default class ZThree {
         url: objFileList[fileIndex].url,
         onLoad: function(object) {
           if (objFileList[fileIndex].onLoad) objFileList[fileIndex].onLoad(object);
+          
+          // 🔥 确保当前文件进度达到100%
+          fileProgress[fileIndex] = 1; 
+          that.updateOverallProgress(objFileList.length, fileProgress, onProgress);
+
           fileIndex++;
           if (fileIndex < objFileList.length) {
             iterateLoadForIt();
           } else {
             if (onAllLoad) onAllLoad();
+            // 🔥 所有文件加载完成后，确保进度显示100%
+            window.EventBus.$emit('changeLoaidng', 100); // 强制发送100%
           }
         },
         onProgress: function(xhr) {
+          if (xhr.lengthComputable) {
+            // 🔥 更新当前文件的进度百分比 (0-1)
+            fileProgress[fileIndex] = xhr.loaded / xhr.total;
+            that.updateOverallProgress(objFileList.length, fileProgress, onProgress);
+          }
           if (objFileList[fileIndex].onProgress) objFileList[fileIndex].onProgress(xhr, fileIndex);
-          if (onProgress) onProgress(xhr, fileIndex);
+        },
+        onError: function(error) {
+            console.error('❌ 模型加载失败:', objFileList[fileIndex].url, error);
+            // 🔥 即使加载失败，也将其标记为完成（或某种错误状态），避免卡住进度
+            fileProgress[fileIndex] = 1; 
+            that.updateOverallProgress(objFileList.length, fileProgress, onProgress);
+            if (objFileList[fileIndex].onError) objFileList[fileIndex].onError(error);
         }
       });
     }
     iterateLoadForIt();
+  }
+
+  // 🔥 新增：统一的整体进度更新方法
+  updateOverallProgress(totalFiles, fileProgressArray, externalOnProgress) {
+    let totalProgress = 0;
+    fileProgressArray.forEach(progress => {
+      totalProgress += progress;
+    });
+    
+    const overallPercent = Math.round((totalProgress / totalFiles) * 100);
+    console.log(`📊 整体加载进度: ${overallPercent}% (${totalProgress.toFixed(2)}/${totalFiles})`);
+    
+    // 确保进度不倒退
+    if (overallPercent > this.lastReportedProgress) {
+        window.EventBus.$emit('changeLoaidng', overallPercent);
+        this.lastReportedProgress = overallPercent;
+    } else if (overallPercent === 100) {
+        // 强制发送100% (为了确保最终状态)
+        window.EventBus.$emit('changeLoaidng', 100);
+        this.lastReportedProgress = 100;
+    }
+
+    if (externalOnProgress) {
+      // 外部 onProgress 回调可能期望 XHR 对象，这里只发送一个虚拟的百分比
+      // 注意：这里传递的XHR对象是模拟的，不包含实际的loaded/total字节数
+      externalOnProgress({ loaded: overallPercent, total: 100 }, null); 
+    }
   }
 
   // 加载天空盒
@@ -1451,14 +1575,255 @@ export default class ZThree {
     return skyTexture;
   }
 
-  // 平滑飞行动画 (用于点击画作) - 适配第一人称控制器
+  // 🐋 加载鲸鱼模型
+  loadWhaleModel() {
+    console.log('🐋 开始加载鲸鱼模型...');
+    
+    this.loaderModel({
+      type: 'glb',
+      url: '/model/whale.glb',
+      onLoad: (gltf) => {
+        console.log('✅ 鲸鱼模型加载成功');
+        
+        // 获取鲸鱼模型
+        this.whaleModel = gltf.scene;
+        
+        // 放大6.67倍（原来的2/3）
+        this.whaleModel.scale.setScalar(6.67);
+        
+        // 设置初始位置（第一人称相机前面稍微往下）
+        this.whalePosition.copy(this.camera.position);
+        this.whalePosition.add(new THREE.Vector3(0, -1, -3)); // 往下1米，往前3米
+        this.whaleModel.position.copy(this.whalePosition);
+        
+        // 设置初始旋转（面向相机前方）
+        this.whaleModel.rotation.y = this.camera.rotation.y;
+        
+        // 添加到场景中，但初始时隐藏
+        this.whaleModel.visible = false;
+        this.scene.add(this.whaleModel);
+        
+        // 初始化动画
+        if (gltf.animations && gltf.animations.length > 0) {
+          this.whaleMixer = new THREE.AnimationMixer(this.whaleModel);
+          
+          // 缓存所有动画
+          gltf.animations.forEach((clip) => {
+            const action = this.whaleMixer.clipAction(clip);
+            this.whaleAnimations[clip.name] = action;
+            console.log('🎭 缓存鲸鱼动画:', clip.name);
+          });
+          
+          // 如果有动画，播放第一个作为默认动画
+          if (Object.keys(this.whaleAnimations).length > 0) {
+            const firstAnimationName = Object.keys(this.whaleAnimations)[0];
+            this.playWhaleAnimation(firstAnimationName);
+          }
+        }
+        
+        console.log('🐋 鲸鱼模型初始化完成');
+      },
+      onProgress: (xhr) => {
+        if (xhr.lengthComputable) {
+          const percentComplete = xhr.loaded / xhr.total * 100;
+          console.log('🐋 鲸鱼模型加载进度:', Math.round(percentComplete) + '%');
+        }
+      },
+      onError: (error) => {
+        console.error('❌ 鲸鱼模型加载失败:', error);
+      }
+    });
+  }
+
+  // 🐋 播放鲸鱼动画
+  playWhaleAnimation(animationName) {
+    if (!this.whaleMixer || !this.whaleAnimations[animationName]) {
+      console.warn('⚠️ 鲸鱼动画未找到:', animationName);
+      return;
+    }
+    
+    // 停止所有当前动画
+    Object.values(this.whaleAnimations).forEach(action => {
+      action.stop();
+    });
+    
+    // 播放指定动画
+    const action = this.whaleAnimations[animationName];
+    action.reset();
+    action.setLoop(THREE.LoopRepeat);
+    action.play();
+    
+    console.log('🎭 播放鲸鱼动画:', animationName);
+  }
+
+  // 🐋 切换视角模式
+  toggleViewMode() {
+    this.thirdPersonMode = !this.thirdPersonMode;
+    
+    if (this.thirdPersonMode) {
+      // 切换到第三人称
+      console.log('🐋 切换到第三人称视角');
+      
+      // 显示鲸鱼模型
+      if (this.whaleModel) {
+        this.whaleModel.visible = true;
+        
+        // 设置鲸鱼初始位置为第一人称相机位置，但高度固定为1.8米
+        this.whalePosition.copy(this.camera.position);
+        this.whalePosition.y = 1.8; // 鲸鱼固定高度1.8米
+        this.whaleModel.position.copy(this.whalePosition);
+        
+        // 设置鲸鱼朝向与相机朝向匹配
+        // 获取相机的世界方向并转换为鲸鱼的Y轴旋转
+        const cameraDirection = new THREE.Vector3();
+        this.camera.getWorldDirection(cameraDirection);
+        this.whaleModel.rotation.y = Math.atan2(cameraDirection.x, cameraDirection.z);
+      }
+      
+      // 禁用第一人称控制，启用第三人称控制
+      this.firstPersonControls.enabled = false;
+      this.thirdPersonControls.enabled = true;
+      
+      // 播放鲸鱼游泳动画
+      if (Object.keys(this.whaleAnimations).length > 0) {
+        const firstAnimationName = Object.keys(this.whaleAnimations)[0];
+        this.playWhaleAnimation(firstAnimationName);
+      }
+      
+      // 立即更新相机位置到正确的第三人称位置
+      this.updateThirdPersonCamera();
+      
+    } else {
+      // 切换到第一人称
+      console.log('👤 切换到第一人称视角');
+      
+      // 隐藏鲸鱼模型
+      if (this.whaleModel) {
+        this.whaleModel.visible = false;
+      }
+      
+      // 启用第一人称控制，禁用第三人称控制
+      this.firstPersonControls.enabled = true;
+      this.thirdPersonControls.enabled = false;
+      
+      // 将第一人称相机移动到鲸鱼当前位置
+      if (this.whaleModel) {
+        this.camera.position.copy(this.whalePosition);
+        this.camera.position.y = 2.5; // 固定高度
+      }
+    }
+    
+    return this.thirdPersonMode;
+  }
+
+  // 🐋 更新第三人称相机位置
+  updateThirdPersonCamera() {
+    if (!this.thirdPersonMode || !this.whaleModel) return;
+    
+    // 基础偏移（相机在鲸鱼后方）
+    const baseOffset = new THREE.Vector3(0, 0.6, -1.9); // 高度+0.7米（保持相机2.5米），后方1.9米（缩短0.3米）
+    
+    // 根据鲸鱼的旋转角度计算相机位置
+    const whaleRotationY = this.whaleModel.rotation.y;
+    
+    // 应用鲸鱼的旋转到偏移向量
+    const rotatedOffset = baseOffset.clone();
+    rotatedOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), whaleRotationY);
+    
+    // 设置相机位置（鲸鱼位置 + 旋转后的偏移）
+    const cameraTargetPosition = this.whalePosition.clone().add(rotatedOffset);
+    this.camera.position.copy(cameraTargetPosition);
+    
+    // 计算相机朝向目标（鲸鱼前方一个点）
+    const lookDirection = new THREE.Vector3(0, 0, 1); // 鲸鱼朝向
+    lookDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), whaleRotationY);
+    const lookAtTarget = this.whalePosition.clone().add(lookDirection.multiplyScalar(5));
+    lookAtTarget.y = this.whalePosition.y; // 保持水平观察
+    
+    this.camera.lookAt(lookAtTarget);
+  }
+
+  // 🐋 初始化第三人称控制器
+  initThirdPersonControls() {
+    const controls = this.thirdPersonControls;
+    
+    // 鼠标控制事件（用于控制相机角度）
+    this.renderer.domElement.addEventListener('mousedown', (event) => {
+      if (event.button === 0 && controls.enabled && this.thirdPersonMode) {
+        controls.isMouseDown = true;
+        controls.lastMouseX = event.clientX;
+        controls.lastMouseY = event.clientY;
+        console.log('🐋 开始第三人称旋转');
+      }
+    });
+    
+    this.renderer.domElement.addEventListener('mousemove', (event) => {
+      if (controls.isMouseDown && controls.enabled && this.thirdPersonMode && this.whaleModel) {
+        const deltaX = event.clientX - controls.lastMouseX;
+        
+        // 水平拖动旋转鲸鱼朝向
+        this.whaleModel.rotation.y -= deltaX * controls.sensitivity;
+        
+        // 更新鲸鱼旋转状态
+        this.whaleRotation.y = this.whaleModel.rotation.y;
+        
+        controls.lastMouseX = event.clientX;
+        controls.lastMouseY = event.clientY;
+      }
+    });
+    
+    this.renderer.domElement.addEventListener('mouseup', (event) => {
+      if (event.button === 0) {
+        controls.isMouseDown = false;
+        console.log('🐋 结束第三人称旋转');
+      }
+    });
+    
+    // 触摸控制事件
+    this.renderer.domElement.addEventListener('touchstart', (event) => {
+      if (event.touches.length === 1 && controls.enabled && this.thirdPersonMode) {
+        event.preventDefault();
+        controls.isTouchActive = true;
+        controls.lastTouchX = event.touches[0].clientX;
+        controls.lastTouchY = event.touches[0].clientY;
+        console.log('🐋 开始第三人称触摸旋转');
+      }
+    }, { passive: false });
+    
+    this.renderer.domElement.addEventListener('touchmove', (event) => {
+      if (controls.isTouchActive && event.touches.length === 1 && controls.enabled && this.thirdPersonMode && this.whaleModel) {
+        event.preventDefault();
+        
+        const deltaX = event.touches[0].clientX - controls.lastTouchX;
+        
+        // 水平拖动旋转鲸鱼朝向
+        this.whaleModel.rotation.y -= deltaX * controls.sensitivity;
+        
+        // 更新鲸鱼旋转状态
+        this.whaleRotation.y = this.whaleModel.rotation.y;
+        
+        controls.lastTouchX = event.touches[0].clientX;
+        controls.lastTouchY = event.touches[0].clientY;
+      }
+    }, { passive: false });
+    
+    this.renderer.domElement.addEventListener('touchend', () => {
+      if (controls.isTouchActive) {
+        controls.isTouchActive = false;
+        console.log('🐋 结束第三人称触摸旋转');
+      }
+    }, { passive: false });
+    
+    console.log('🐋 第三人称控制器初始化完成');
+  }
+
+  // 平滑飞行动画 (用于点击画作) - 适配第一人称和第三人称控制器
   flyTo(option) {
-    option.position = option.position || []; // 相机新的位置
+    option.position = option.position || []; // 目标位置
     option.controls = option.controls || []; // 目标朝向位置
     option.duration = option.duration || 1000; // 飞行时间
     option.easing = option.easing || TWEEN.Easing.Linear.None;
     TWEEN.removeAll();
-    const curPosition = this.camera.position;
     
     // 强制设置Y坐标为2.5米
     const fixedY = 2.5;
@@ -1467,18 +1832,82 @@ export default class ZThree {
       option.position[1] = fixedY;
     }
     
-    // 🔥 第一人称控制器：计算当前和目标朝向
+    const targetPosition = new THREE.Vector3(option.position[0], fixedY, option.position[2]);
+    const lookAtTarget = new THREE.Vector3(option.controls[0], option.controls[1], option.controls[2]);
+    
+    // 🐋 第三人称模式：移动鲸鱼而不是相机
+    if (this.thirdPersonMode && this.whaleModel) {
+      console.log('🐋 第三人称模式飞行到画作');
+      
+      const curWhalePosition = this.whalePosition.clone();
+      const whaleTargetHeight = 1.8; // 鲸鱼固定高度1.8米
+      
+      // 计算鲸鱼的目标朝向
+      const whaleDirection = new THREE.Vector3().subVectors(lookAtTarget, targetPosition).normalize();
+      let targetRotation = Math.atan2(whaleDirection.x, whaleDirection.z);
+      
+      // 🔥 修复：pic27在第三人称模式下需要180度旋转修正
+      if (option.pictureName === 'pic27') {
+        targetRotation += Math.PI; // 增加180度
+      }
+      
+      // 处理角度跨越问题，选择最短的旋转路径
+      const currentRotation = this.whaleModel.rotation.y;
+      let adjustedTargetRotation = targetRotation;
+      
+      // 计算角度差
+      let angleDiff = targetRotation - currentRotation;
+      if (angleDiff > Math.PI) {
+        adjustedTargetRotation = targetRotation - 2 * Math.PI;
+      } else if (angleDiff < -Math.PI) {
+        adjustedTargetRotation = targetRotation + 2 * Math.PI;
+      }
+      
+      const tween = new TWEEN.Tween({
+        x: curWhalePosition.x, y: curWhalePosition.y, z: curWhalePosition.z,
+        rotY: currentRotation
+      }).to({
+        x: targetPosition.x, y: whaleTargetHeight, z: targetPosition.z,
+        rotY: adjustedTargetRotation
+      }, option.duration)
+        .easing(option.easing);
+        
+      tween.onUpdate(() => {
+        // 更新鲸鱼位置和旋转
+        this.whalePosition.set(tween._object.x, tween._object.y, tween._object.z);
+        this.whaleModel.position.copy(this.whalePosition);
+        this.whaleModel.rotation.y = tween._object.rotY;
+        
+        // 相机会自动通过updateThirdPersonCamera跟随
+      });
+      
+      tween.onComplete(() => {
+        if (option.done) option.done();
+        console.log('🐋 第三人称飞行完成');
+      });
+
+      tween.start();
+      return tween;
+    }
+    
+    // 🔥 第一人称模式：移动相机（原有逻辑）
+    console.log('👤 第一人称模式飞行到画作');
+    const curPosition = this.camera.position;
     const controls = this.firstPersonControls;
     const currentEuler = controls.euler.clone();
     
-    // 计算目标朝向（从新位置看向controls指定的点）
-    const targetPosition = new THREE.Vector3(option.position[0], fixedY, option.position[2]);
-    const lookAtTarget = new THREE.Vector3(option.controls[0], option.controls[1], option.controls[2]);
+    // 🔥 修复：pic27在第一人称模式下需要180度旋转修正
+    let adjustedLookAtTarget = lookAtTarget.clone();
+    if (option.pictureName === 'pic27') {
+      // 计算从目标位置指向当前lookAt目标的方向，然后反转
+      const direction = new THREE.Vector3().subVectors(adjustedLookAtTarget, targetPosition);
+      adjustedLookAtTarget = targetPosition.clone().sub(direction);
+    }
     
     // 创建临时相机计算目标朝向
     const tempCamera = new THREE.PerspectiveCamera();
     tempCamera.position.copy(targetPosition);
-    tempCamera.lookAt(lookAtTarget);
+    tempCamera.lookAt(adjustedLookAtTarget);
     
     // 获取目标欧拉角
     const targetEuler = new THREE.Euler().setFromQuaternion(tempCamera.quaternion, 'YXZ');
@@ -1510,22 +1939,66 @@ export default class ZThree {
     tween.onComplete(() => {
       this.controls.enabled = true;
       if (option.done) option.done();
+      console.log('👤 第一人称飞行完成');
     });
 
     tween.start();
     return tween;
   }
 
-  // 淡入淡出传送 (用于小地图) - 适配第一人称控制器
+  // 淡入淡出传送 (用于小地图) - 适配第一人称和第三人称控制器
   teleportTo(option) {
+    // 🐋 根据模式选择不同的高度
+    let targetHeight, targetPosition, lookAtTarget;
+    
+    if (this.thirdPersonMode && this.whaleModel) {
+      // 第三人称模式：鲸鱼高度1.8米
+      targetHeight = 1.8;
+      targetPosition = new THREE.Vector3(option.position[0], targetHeight, option.position[2]);
+      lookAtTarget = new THREE.Vector3(option.controls[0], option.controls[1], option.controls[2]);
+    } else {
+      // 第一人称模式：相机高度2.5米
+      targetHeight = 2.5;
+      targetPosition = new THREE.Vector3(option.position[0], targetHeight, option.position[2]);
+      lookAtTarget = new THREE.Vector3(option.controls[0], option.controls[1], option.controls[2]);
+    }
+    
     if (!window.EventBus) {
       console.error("EventBus not found. Cannot perform fade transition. Teleporting instantly.");
+      
+      // 🐋 第三人称模式：传送鲸鱼
+      if (this.thirdPersonMode && this.whaleModel) {
+        console.log('🐋 第三人称瞬间传送');
+        this.whalePosition.copy(targetPosition);
+        this.whaleModel.position.copy(this.whalePosition);
+        
+        // 计算鲸鱼朝向
+        const whaleDirection = new THREE.Vector3().subVectors(lookAtTarget, targetPosition).normalize();
+        const targetRotation = Math.atan2(whaleDirection.x, whaleDirection.z);
+        
+        // 处理角度跨越问题，选择最短的旋转路径
+        const currentRotation = this.whaleModel.rotation.y;
+        let adjustedTargetRotation = targetRotation;
+        
+        let angleDiff = targetRotation - currentRotation;
+        if (angleDiff > Math.PI) {
+          adjustedTargetRotation = targetRotation - 2 * Math.PI;
+        } else if (angleDiff < -Math.PI) {
+          adjustedTargetRotation = targetRotation + 2 * Math.PI;
+        }
+        
+        this.whaleModel.rotation.y = adjustedTargetRotation;
+        
+        // 调用done回调
+        if (option.done) option.done();
+        return;
+      }
+      
       // 🔥 第一人称传送：设置位置和朝向
-      const fixedY = 2.5;
-      this.camera.position.set(option.position[0], fixedY, option.position[2]);
+      console.log('👤 第一人称瞬间传送');
+      this.camera.position.copy(targetPosition);
       
       // 计算朝向
-      const lookAtTarget = new THREE.Vector3(option.controls[0], option.controls[1], option.controls[2]);
       const tempCamera = new THREE.PerspectiveCamera();
       tempCamera.position.copy(this.camera.position);
       tempCamera.lookAt(lookAtTarget);
@@ -1536,6 +2009,9 @@ export default class ZThree {
       
       // 兼容性：更新target
       this.controls.target.copy(lookAtTarget);
+      
+      // 调用done回调
+      if (option.done) option.done();
       return;
     }
 
@@ -1545,12 +2021,34 @@ export default class ZThree {
     this.controls.enabled = false;
 
     setTimeout(() => {
+      // 🐋 第三人称模式：传送鲸鱼
+      if (this.thirdPersonMode && this.whaleModel) {
+        console.log('🐋 第三人称淡入淡出传送');
+        this.whalePosition.copy(targetPosition);
+        this.whaleModel.position.copy(this.whalePosition);
+        
+        // 计算鲸鱼朝向
+        const whaleDirection = new THREE.Vector3().subVectors(lookAtTarget, targetPosition).normalize();
+        const targetRotation = Math.atan2(whaleDirection.x, whaleDirection.z);
+        
+        // 处理角度跨越问题，选择最短的旋转路径
+        const currentRotation = this.whaleModel.rotation.y;
+        let adjustedTargetRotation = targetRotation;
+        
+        let angleDiff = targetRotation - currentRotation;
+        if (angleDiff > Math.PI) {
+          adjustedTargetRotation = targetRotation - 2 * Math.PI;
+        } else if (angleDiff < -Math.PI) {
+          adjustedTargetRotation = targetRotation + 2 * Math.PI;
+        }
+        
+        this.whaleModel.rotation.y = adjustedTargetRotation;
+      } else {
       // 🔥 第一人称传送：设置位置和朝向
-      const fixedY = 2.5;
-      this.camera.position.set(option.position[0], fixedY, option.position[2]);
+        console.log('👤 第一人称淡入淡出传送');
+        this.camera.position.copy(targetPosition);
       
       // 计算朝向
-      const lookAtTarget = new THREE.Vector3(option.controls[0], option.controls[1], option.controls[2]);
       const tempCamera = new THREE.PerspectiveCamera();
       tempCamera.position.copy(this.camera.position);
       tempCamera.lookAt(lookAtTarget);
@@ -1561,11 +2059,15 @@ export default class ZThree {
       
       // 兼容性：更新target
       this.controls.target.copy(lookAtTarget);
+      }
 
       window.EventBus.$emit('toggle-fade', false);
 
       setTimeout(() => {
         this.controls.enabled = true;
+        
+        // 调用done回调
+        if (option.done) option.done();
       }, fadeDuration);
     }, fadeDuration);
   }
@@ -1613,6 +2115,16 @@ export default class ZThree {
       // 🔥 修复：始终调用updateCameraMovement，让它自己判断是否需要更新
       // 而不是依赖于isMoving状态，避免漫游结束后控制卡顿
       _this.updateCameraMovement();
+
+      // 🐋 更新鲸鱼动画
+      if (_this.whaleMixer) {
+        _this.whaleMixer.update(0.016); // 假设60fps
+      }
+
+      // 🐋 在第三人称模式下更新相机位置
+      if (_this.thirdPersonMode) {
+        _this.updateThirdPersonCamera();
+      }
 
       // 更新状态
       if (_this.stats) {

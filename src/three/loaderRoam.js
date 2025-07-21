@@ -84,9 +84,20 @@ async function onClick(selectObj, app) {
     }
     // === END ===
     
-    // 修改碰撞检测：使用1单位安全距离，如果超出则移动到安全边界
-    const currentPos = app.camera.position.clone();
-    let targetPos = new THREE.Vector3(point.x, app.camera.position.y, point.z);
+    // 🐋 第三人称模式：使用鲸鱼位置进行计算
+    let currentPos, targetPos, targetHeight;
+    
+    if (app.thirdPersonMode && app.whaleModel) {
+      // 第三人称模式：基于鲸鱼位置
+      currentPos = app.whalePosition.clone();
+      targetHeight = 1.8; // 鲸鱼固定高度1.8米
+      targetPos = new THREE.Vector3(point.x, targetHeight, point.z);
+    } else {
+      // 第一人称模式：基于相机位置
+      currentPos = app.camera.position.clone();
+      targetHeight = app.camera.position.y;
+      targetPos = new THREE.Vector3(point.x, targetHeight, point.z);
+    }
     
     // 检查目标位置是否安全，如果不安全则调整到安全位置
     targetPos = findSafePosition(app, currentPos, targetPos);
@@ -111,11 +122,11 @@ async function onClick(selectObj, app) {
       const currentDirection = new THREE.Vector3();
       app.camera.getWorldDirection(currentDirection);
       
-      position = [targetPos.x, app.camera.position.y, targetPos.z];
+      position = [targetPos.x, targetHeight, targetPos.z];
       
       // 在新位置保持当前朝向
-      const newCameraPos = new THREE.Vector3(targetPos.x, app.camera.position.y, targetPos.z);
-      const newTarget = newCameraPos.clone().add(currentDirection.multiplyScalar(5));
+      const newPos = new THREE.Vector3(targetPos.x, targetHeight, targetPos.z);
+      const newTarget = newPos.clone().add(currentDirection.multiplyScalar(5));
       
       controls = [newTarget.x, newTarget.y, newTarget.z];
     }
@@ -141,7 +152,7 @@ async function onClick(selectObj, app) {
     
     // 🔧 新增：如果没有数据（返回null），则不执行任何操作
     if (!obj) {
-      console.log(`ℹ️ ${model.name} 没有API数据，跳过点击操作`);
+      // console.log(`ℹ️ ${model.name} 没有API数据，跳过点击操作`);
       return;
     }
     
@@ -154,24 +165,24 @@ async function onClick(selectObj, app) {
       
       // 检查是否是支持自定义上传的画作（专属展位）
       if (customUploadPictures.includes(model.name)) {
-        console.log('🎨', model.name, '- 专属展位，检查是否有自定义作品');
+        // console.log('🎨', model.name, '- 专属展位，检查是否有自定义作品');
         
         // 检查是否已有自定义上传的作品
         const customArtwork = localStorage.getItem(`customArtwork_${model.name}`);
         if (customArtwork) {
           try {
             const artworkData = JSON.parse(customArtwork);
-            console.log('🎯 已有自定义作品，显示详情:', artworkData.title);
+            // console.log('🎯 已有自定义作品，显示详情:', artworkData.title);
             EventBus.$emit('showPictureDetail', artworkData);
           } catch (error) {
             console.error('❌ 读取自定义作品失败:', error);
             // 失败时显示上传弹窗
-            console.log('📁 数据读取失败，显示上传弹窗');
+            // console.log('📁 数据读取失败，显示上传弹窗');
             EventBus.$emit('showPictureUpload', model.name);
           }
         } else {
           // 没有自定义作品，显示上传弹窗
-          console.log('📁 没有自定义作品，显示上传弹窗');
+          // console.log('📁 没有自定义作品，显示上传弹窗');
           EventBus.$emit('showPictureUpload', model.name);
         }
         return;
@@ -528,6 +539,10 @@ export function calculateViewingPosition(app, model) {
   const specialPictures = ['pic20', 'pic21', 'pic24', 'pic25', 'pic26'];
   const isSpecialPicture = specialPictures.includes(model.name);
   
+  // 🔥 新增：第二展厅画作需要更近的观赏距离
+  const secondHallPictures = ['pic27', 'pic26', 'pic25', 'pic24'];
+  const isSecondHallPicture = secondHallPictures.includes(model.name);
+  
   // 根据相机视角和画作尺寸计算最佳观看距离
   const fov = app.camera.fov * Math.PI / 180;
   const idealDistance = (maxDimension / 2) / Math.tan(fov / 2);
@@ -547,6 +562,11 @@ export function calculateViewingPosition(app, model) {
     extraDistance = -0.5;
   }
   
+  // 🔥 修复：第二展厅画作需要更近的距离
+  if (isSecondHallPicture) {
+    extraDistance -= 1.0; // 第二展厅画作额外靠近1米
+  }
+  
   if (isMobile) {
     extraDistance += 1.5;
   }
@@ -554,7 +574,13 @@ export function calculateViewingPosition(app, model) {
   // 添加适当的安全边距
   const safetyMargin = Math.max(1.0, maxDimension * 0.3);
   const cameraDistance = idealDistance + safetyMargin;
-  const maxDistance = 8.0;
+  
+  // 🔥 修复：为第二展厅画作设置更近的最大距离，避免穿墙
+  let maxDistance = 8.0;
+  if (isSecondHallPicture) {
+    maxDistance = 4.5; // 第二展厅画作最大距离设为4.5米，避免穿到背面墙里
+  }
+  
   const finalDistance = Math.min(cameraDistance, maxDistance);
   
   // 从画作位置获取画作的正面朝向

@@ -101,7 +101,3 @@ Use the provided startup script or set the NODE_OPTIONS environment variable:
 export NODE_OPTIONS="--openssl-legacy-provider"
 ```
 
-## 📄 License / 许可证
-
-This project is for educational and demonstration purposes.
-本项目仅用于教育和演示目的。

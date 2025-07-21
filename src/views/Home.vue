@@ -58,6 +58,14 @@
               @click="toggleMiniMap">
         <img src="@/assets/image/map_icon.png" alt="map icon">
       </button>
+      
+      <!-- 🐋 第三人称视角切换 -->
+      <button class="control-btn"
+              :class="{ 'whale-active': isThirdPersonMode }"
+              :title="isThirdPersonMode ? '切换到第一人称' : '切换到第三人称'"
+              @click="toggleViewMode">
+        <img src="@/assets/image/whale.png" alt="whale icon">
+      </button>
     </div>
     
     <div id="screen" class="screen"></div>
@@ -172,6 +180,9 @@
 
         // 🔥 新增：数据更新订阅
         unsubscribeDataUpdate: null,
+        
+        // 🐋 第三人称视角状态
+        isThirdPersonMode: false,
       };
     },
     
@@ -301,6 +312,11 @@
         } catch (error) {
           console.error('❌ 资源加载失败:', error);
         }
+
+        // 🐋 初始化第三人称视角功能
+        console.log('🐋 初始化第三人称视角功能...');
+        app.initThirdPersonControls();
+        app.loadWhaleModel();
 
         // 3. 初始化CSS渲染器
         console.log('🎨 初始化CSS渲染器...');
@@ -497,6 +513,32 @@
         }
       },
       
+      // 🐋 切换视角模式
+      toggleViewMode() {
+        if (!app) {
+          this.$message.warning('场景尚未初始化完成');
+          return;
+        }
+        
+        try {
+          const newMode = app.toggleViewMode();
+          this.isThirdPersonMode = newMode;
+          
+          const modeText = newMode ? '第三人称' : '第一人称';
+          this.$message({
+            message: `已切换到${modeText}视角`,
+            type: 'success',
+            duration: 2000,
+            customClass: 'dark-message'
+          });
+          
+          console.log(`🐋 视角切换完成: ${modeText}`);
+        } catch (error) {
+          console.error('❌ 视角切换失败:', error);
+          this.$message.error('视角切换失败，请稍后再试');
+        }
+      },
+      
       // 🔥 新增：开始自动漫游
       startAutoRoaming() {
         if (!app || !app.rayModel) {
@@ -504,9 +546,9 @@
           return;
         }
 
-        // 定义漫游序列：pic1-pic11, pic27, pic26, pic25, pic24
+        // 定义漫游序列：pic1-pic12, pic27, pic26, pic25, pic24
         const roamingPictures = [
-          'pic1', 'pic2', 'pic3', 'pic4', 'pic5', 'pic6', 'pic7', 'pic8', 'pic9', 'pic10', 'pic11',
+          'pic1', 'pic2', 'pic3', 'pic4', 'pic5', 'pic6', 'pic7', 'pic8', 'pic9', 'pic10', 'pic11', 'pic12',
           'pic27', 'pic26', 'pic25', 'pic24'
         ];
 
@@ -531,6 +573,11 @@
         this.currentRoamingIndex = 0;
         
         console.log('🎬 开始一键漫游，共', this.roamingSequence.length, '个画作');
+        
+        // 输出实际漫游的画作列表
+        const actualPictures = this.roamingSequence.map(model => model.name);
+        console.log('📋 实际漫游序列:', actualPictures.join(' → '));
+        
         this.$message({
           message: `开始一键漫游，将依次观赏 ${this.roamingSequence.length} 幅画作`,
           type: 'success',
@@ -557,16 +604,15 @@
         });
       },
 
-      // 🔥 新增：漫游到下一幅画作
+      // 🔥 重构 v2：修复pic12重复观看问题，统一漫游逻辑
       roamToNextPicture() {
         if (!this.isRoaming || this.currentRoamingIndex >= this.roamingSequence.length) {
-          // 漫游结束
           this.isRoaming = false;
           console.log('🎉 漫游完成！');
           this.$message({
             message: '一键漫游已完成，欢迎继续自由探索！',
             type: 'success',
-            duration: 3000
+            duration: 3000,
           });
           return;
         }
@@ -576,7 +622,6 @@
         
         if (!viewingPosition) {
           console.error('❌ 无法计算画作观赏位置:', currentModel.name);
-          // 跳过当前画作，继续下一个
           this.currentRoamingIndex++;
           this.roamToNextPicture();
           return;
@@ -584,77 +629,56 @@
 
         console.log(`🎨 漫游到第 ${this.currentRoamingIndex + 1}/${this.roamingSequence.length} 幅画作: ${currentModel.name}`);
         
-        // 🔥 新增：检查是否需要跨展厅移动（pic11到pic27的特殊处理）
-        const previousModel = this.currentRoamingIndex > 0 ? this.roamingSequence[this.currentRoamingIndex - 1] : null;
-        const needsFadeTransition = previousModel && previousModel.name === 'pic11' && currentModel.name === 'pic27';
-        
-        if (needsFadeTransition) {
-          console.log('🎭 检测到跨展厅移动（pic11 → pic27），使用淡入淡出效果');
-          
-          // 使用淡入淡出效果进行跨展厅传送
-          this.fadeToNextPicture(viewingPosition, currentModel);
-        } else {
-          // 正常的飞行移动
-          this.flyToNextPicture(viewingPosition, currentModel);
-        }
-      },
-      
-      // 🔥 新增：淡入淡出切换到下一幅画作
-      fadeToNextPicture(viewingPosition, currentModel) {
-        // 1. 淡出
-        this.isFading = true;
-        console.log('🌑 开始淡出效果');
-        
-        setTimeout(() => {
-          // 2. 在黑屏状态下瞬间移动相机
-          console.log('📍 瞬间传送到目标位置');
-          if (app && app.camera && app.controls) {
-            app.camera.position.set(...viewingPosition.position);
-            app.controls.target.set(...viewingPosition.controls);
-            app.controls.update();
-          }
-          
-          // 3. 短暂停留后淡入
-          setTimeout(() => {
-            this.isFading = false;
-            console.log('🌞 开始淡入效果');
-            console.log(`✅ 到达画作 ${currentModel.name} 观赏位置，停留2秒`);
-            
-            // 4. 在当前位置停留2秒后继续下一个
-            this.roamingTimer = setTimeout(() => {
-              if (this.isRoaming) { // 确保漫游没有被中途停止
-                this.currentRoamingIndex++;
-                this.roamToNextPicture();
-              }
-            }, 2000); // 停留2秒
-          }, 200); // 黑屏状态持续200ms
-        }, 400); // 等待淡出完成（与CSS transition时间一致）
-      },
-      
-      // 🔥 新增：正常飞行移动到下一幅画作
-      flyToNextPicture(viewingPosition, currentModel) {
-        // 移动相机到观赏位置
+        // 统一执行“飞行”和“观看”
         app.flyTo({
           position: viewingPosition.position,
           controls: viewingPosition.controls,
-          duration: 1500, // 移动时间1.5秒
+          pictureName: viewingPosition.pictureName,
+          duration: 1500,
           done: () => {
-            console.log(`✅ 到达画作 ${currentModel.name} 观赏位置，停留2秒`);
+            console.log(`✅ 到达画作 ${currentModel.name}，停留2秒`);
             
-            // 在当前位置停留2秒后继续下一个
             this.roamingTimer = setTimeout(() => {
-              if (this.isRoaming) { // 确保漫游没有被中途停止
+              if (!this.isRoaming) return;
+
+              const isLastPictureOfFirstHall = currentModel.name === 'pic12';
+
+              // 在停留观看结束后，决策下一步动作
+              if (isLastPictureOfFirstHall) {
+                // 如果是pic12，执行跨展厅传送
+                console.log(`🎭 从 ${currentModel.name} 跨展厅移动...`);
+
+                const nextIndex = this.currentRoamingIndex + 1;
+                if (nextIndex >= this.roamingSequence.length) {
+                    this.roamToNextPicture(); // 结束漫游
+                    return;
+                }
+                const nextModel = this.roamingSequence[nextIndex];
+                const nextViewingPosition = calculateViewingPosition(app, nextModel);
+
+                // 使用teleportTo方法处理跨展厅传送，支持第一人称和第三人称
+                app.teleportTo({
+                  position: nextViewingPosition.position,
+                  controls: nextViewingPosition.controls,
+                  done: () => {
+                    console.log(`✅ 成功跨展厅到达 ${nextModel.name}，停留2秒`);
+                    
+            this.roamingTimer = setTimeout(() => {
+                      if (this.isRoaming) {
+                        this.currentRoamingIndex = nextIndex + 1; // 完成传送后，直接跳到下一幅画
+                this.roamToNextPicture();
+              }
+                    }, 2000);
+                  }
+                });
+
+              } else {
+                // 普通漫游，直接到下一幅
                 this.currentRoamingIndex++;
                 this.roamToNextPicture();
               }
-            }, 2000); // 停留2秒
+            }, 2000); // 观看停留时间
           },
-          start: () => {
-            // 移动开始时的处理
-            if (app.iconGroup) {
-              app.iconGroup.visible = false;
-            }
-          }
         });
       },
       
@@ -729,6 +753,18 @@
           }
         }
         
+        // 🐋 新增：鲸鱼按钮激活状态样式
+        &.whale-active {
+          background: linear-gradient(45deg, #00bfff, #1e90ff);
+          animation: whale-swim 3s infinite;
+          box-shadow: 0 0 20px rgba(30, 144, 255, 0.6);
+          
+          &:hover {
+            background: linear-gradient(45deg, #00aaee, #1c7ed6);
+            transform: scale(1.1);
+          }
+        }
+        
         img {
           width: 18px;
           height: 18px;
@@ -747,6 +783,91 @@
         }
         100% {
           box-shadow: 0 0 20px rgba(255, 107, 107, 0.6);
+        }
+      }
+      
+      // 🐋 新增：鲸鱼游泳动画
+      @keyframes whale-swim {
+        0% {
+          box-shadow: 0 0 20px rgba(30, 144, 255, 0.6);
+          transform: rotateY(0deg);
+        }
+        33% {
+          box-shadow: 0 0 25px rgba(30, 144, 255, 0.7);
+          transform: rotateY(10deg) scale(1.02);
+        }
+        66% {
+          box-shadow: 0 0 30px rgba(30, 144, 255, 0.8);
+          transform: rotateY(-10deg) scale(1.05);
+        }
+        100% {
+          box-shadow: 0 0 20px rgba(30, 144, 255, 0.6);
+          transform: rotateY(0deg);
+        }
+      }
+      
+      // 📱 手机端样式优化
+      @media (max-width: 768px) {
+        top: 10px;
+        right: 10px;
+        gap: 8px; // 减少图标间距
+        
+        .control-btn {
+          width: 32px; // 缩小图标大小
+          height: 32px;
+          background: rgba(255, 255, 255, 0.7); // 增加透明度
+          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15); // 减小阴影
+          
+          &:hover {
+            background: rgba(255, 255, 255, 0.85);
+            transform: scale(1.05); // 减小hover缩放
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+          }
+          
+          // 漫游按钮激活状态 - 手机端
+          &.roaming-active {
+            background: linear-gradient(45deg, rgba(255, 107, 107, 0.9), rgba(255, 71, 87, 0.9));
+            box-shadow: 0 0 15px rgba(255, 107, 107, 0.5);
+            
+            &:hover {
+              background: linear-gradient(45deg, rgba(255, 82, 82, 0.95), rgba(255, 55, 66, 0.95));
+              transform: scale(1.05);
+            }
+          }
+          
+          // 鲸鱼按钮激活状态 - 手机端
+          &.whale-active {
+            background: linear-gradient(45deg, rgba(0, 191, 255, 0.9), rgba(30, 144, 255, 0.9));
+            box-shadow: 0 0 15px rgba(30, 144, 255, 0.5);
+            
+            &:hover {
+              background: linear-gradient(45deg, rgba(0, 170, 238, 0.95), rgba(28, 126, 214, 0.95));
+              transform: scale(1.05);
+            }
+          }
+          
+          img {
+            width: 14px; // 缩小图标内部图片
+            height: 14px;
+          }
+        }
+      }
+      
+      // 📱 更小屏幕的进一步优化
+      @media (max-width: 480px) {
+        top: 8px;
+        right: 8px;
+        gap: 6px;
+        
+        .control-btn {
+          width: 28px; // 进一步缩小
+          height: 28px;
+          background: rgba(255, 255, 255, 0.65); // 更透明
+          
+          img {
+            width: 12px;
+            height: 12px;
+          }
         }
       }
     }
